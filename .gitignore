@@ -42,3 +42,12 @@ BioLiP.txt.gz
 *.h5
 
 _*.py
+
+*.docx
+*.txt
+
+NEW_FEATURES.md
+OPTIMIZATION.md
+PROJECT_OVERVIEW.md
+SYSTEM_OVERVIEW.md
+THESIS_FRAMEWORK.md
