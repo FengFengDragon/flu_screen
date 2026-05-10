@@ -1,0 +1,842 @@
+{% extends "base.html" %}
+
+{% block title %}传统机器学习 - 残基预测{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="header">
+        <h1>🤖 传统机器学习预测</h1>
+        <p>使用随机森林、SVM、梯度提升等算法预测蛋白质结合位点</p>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('predict')">预测</button>
+        <button class="tab-btn" onclick="showTab('algorithms')">算法选择</button>
+        <button class="tab-btn" onclick="showTab('train')">训练模型</button>
+        <button class="tab-btn" onclick="showTab('models')">模型管理</button>
+        <button class="tab-btn" onclick="showTab('features')">特征分析</button>
+    </div>
+
+    <div id="predict-tab" class="tab-content active">
+        <div class="card">
+            <h3>🔍 结合位点预测</h3>
+            <p>上传PDB文件，选择算法进行结合位点预测</p>
+
+            <div class="form-group">
+                <label>PDB文件</label>
+                <input type="file" id="predict-pdb" accept=".pdb" onchange="previewPDBFile()">
+                <div id="predict-pdb-preview" class="file-preview"></div>
+            </div>
+
+            <div class="form-group">
+                <label>选择算法</label>
+                <select id="algorithm-select">
+                    <option value="random_forest">随机森林</option>
+                    <option value="svm">支持向量机 (SVM)</option>
+                    <option value="gradient_boosting">梯度提升 (GBM)</option>
+                    <option value="heuristic">启发式方法</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>预测阈值</label>
+                <input type="range" id="threshold-slider" min="0.1" max="0.9" step="0.1" value="0.5" oninput="updateThresholdValue()">
+                <span id="threshold-value">0.5</span>
+            </div>
+
+            <button class="btn btn-primary" onclick="predictBindingSites()">
+                🔍 开始预测
+            </button>
+
+            <div class="info-box">
+                <strong>💡 算法说明:</strong>
+                <ul>
+                    <li><strong>随机森林</strong>: 基于决策树的集成方法，可解释性强</li>
+                    <li><strong>SVM</strong>: 支持向量机，适合小样本数据</li>
+                    <li><strong>梯度提升</strong>: 预测精度高，但训练较慢</li>
+                    <li><strong>启发式方法</strong>: 基于规则的快速预测，无需训练</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card" id="predict-result" style="display: none;">
+            <h3>预测结果</h3>
+            <div id="predict-result-display"></div>
+        </div>
+    </div>
+
+    <div id="algorithms-tab" class="tab-content">
+        <div class="card">
+            <h3>📊 支持的算法</h3>
+            <button class="btn btn-secondary" onclick="loadAlgorithms()">
+                🔄 刷新算法列表
+            </button>
+            <div id="algorithms-list" class="algorithms-container"></div>
+        </div>
+    </div>
+
+    <div id="train-tab" class="tab-content">
+        <div class="card">
+            <h3>🎓 训练模型</h3>
+
+            <div class="form-group">
+                <label>数据源</label>
+                <select id="train-data-source" onchange="onDataSourceChange()">
+                    <option value="real">🧬 真实数据（BioLiP）</option>
+                    <option value="synthetic">🎲 合成数据（演示用）</option>
+                </select>
+            </div>
+
+            <div id="real-data-options" class="form-group" style="background:#f0f8ff;padding:12px;border-radius:8px;border:1px solid #b8daff;">
+                <p style="font-size:0.85rem;color:#004085;margin-bottom:10px;">
+                    📂 使用项目根目录下的 <code>BioLiP.txt.gz</code> 文件进行真实数据训练
+                </p>
+                <div class="form-group">
+                    <label>最大处理条目数</label>
+                    <select id="train-max-entries">
+                        <option value="1000">1,000 条（快速测试）</option>
+                        <option value="5000" selected>5,000 条（推荐）</option>
+                        <option value="10000">10,000 条（更精确）</option>
+                        <option value="50000">50,000 条（高质量）</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>选择算法</label>
+                <select id="train-algorithm-select">
+                    <option value="random_forest">随机森林</option>
+                    <option value="svm">支持向量机 (SVM)</option>
+                    <option value="gradient_boosting">梯度提升 (GBM)</option>
+                </select>
+            </div>
+
+            <button class="btn btn-success" onclick="trainModel()">
+                🎓 开始训练
+            </button>
+
+            <div class="warning-box">
+                <strong>⚠️ 说明:</strong>
+                <p>选择「真实数据」将使用 BioLiP 数据库（约 98 万条蛋白质-配体结合记录）进行训练，训练时间较长但模型更准确。</p>
+                <p>选择「合成数据」将使用随机生成的数据快速训练一个演示模型。</p>
+            </div>
+        </div>
+
+        <div class="card" id="train-result" style="display: none;">
+            <h3>训练结果</h3>
+            <div id="train-result-display"></div>
+        </div>
+    </div>
+
+    <div id="models-tab" class="tab-content">
+        <div class="card">
+            <h3>📚 模型管理</h3>
+            <button class="btn btn-secondary" onclick="loadModels()">
+                🔄 刷新模型列表
+            </button>
+            <div id="models-list" class="models-container"></div>
+        </div>
+    </div>
+
+    <div id="features-tab" class="tab-content">
+        <div class="card">
+            <h3>🔬 特征分析</h3>
+            <p>查看PDB文件的残基特征信息</p>
+
+            <div class="form-group">
+                <label>PDB文件</label>
+                <input type="file" id="feature-pdb" accept=".pdb" onchange="previewFeaturePDB()">
+                <div id="feature-pdb-preview" class="file-preview"></div>
+            </div>
+
+            <button class="btn btn-primary" onclick="analyzeFeatures()">
+                🔬 分析特征
+            </button>
+        </div>
+
+        <div class="card" id="feature-result" style="display: none;">
+            <h3>特征分析结果</h3>
+            <div id="feature-result-display"></div>
+        </div>
+    </div>
+
+    <div id="loading-area" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <div class="loading-message" id="loading-message">处理中...</div>
+        </div>
+    </div>
+</div>
+
+<style>
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.form-group input[type="file"],
+.form-group select,
+.form-group input[type="range"] {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 14px;
+}
+
+#threshold-value {
+    display: inline-block;
+    margin-left: 10px;
+    font-weight: bold;
+    color: #007bff;
+}
+
+.file-preview {
+    margin-top: 10px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 5px;
+    font-size: 14px;
+}
+
+.info-box, .warning-box, .success-box, .error-box {
+    padding: 15px;
+    border-radius: 5px;
+    margin: 20px 0;
+}
+
+.info-box {
+    background: #d1ecf1;
+    border: 1px solid #bee5eb;
+    color: #0c5460;
+}
+
+.warning-box {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    color: #856404;
+}
+
+.success-box {
+    background: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+}
+
+.error-box {
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+
+.algorithms-container, .models-container {
+    margin-top: 20px;
+}
+
+.algorithm-item, .model-item {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 15px;
+}
+
+.algorithm-item h4, .model-item h4 {
+    margin-top: 0;
+    color: #333;
+}
+
+.algorithm-item p, .model-item p {
+    margin: 10px 0;
+    color: #666;
+}
+
+.algorithm-item ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+.algorithm-item li, .model-item li {
+    margin: 5px 0;
+    color: #555;
+}
+
+.result-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+}
+
+.result-table th, .result-table td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+.result-table th {
+    background: #f8f9fa;
+    font-weight: 600;
+}
+
+.result-table tr:hover {
+    background: #f8f9fa;
+}
+
+.high-probability {
+    background: #d4edda !important;
+    color: #155724;
+}
+
+.medium-probability {
+    background: #fff3cd !important;
+    color: #856404;
+}
+
+.low-probability {
+    background: #f8d7da !important;
+    color: #721c24;
+}
+
+.btn-delete {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.btn-delete:hover {
+    background: #c82333;
+}
+
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.loading-content {
+    background: white;
+    padding: 30px;
+    border-radius: 10px;
+    text-align: center;
+}
+
+.spinner {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 15px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-message {
+    color: #333;
+    font-size: 16px;
+}
+</style>
+
+<script>
+let uploadedPDBFile = null;
+let featurePDBFile = null;
+
+function showTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    document.getElementById(tabName + '-tab').classList.add('active');
+    event.target.classList.add('active');
+}
+
+function updateThresholdValue() {
+    const value = document.getElementById('threshold-slider').value;
+    document.getElementById('threshold-value').textContent = value;
+}
+
+function previewPDBFile() {
+    const file = document.getElementById('predict-pdb').files[0];
+    if (file) {
+        uploadedPDBFile = file;
+        document.getElementById('predict-pdb-preview').innerHTML = `
+            <strong>已选择:</strong> ${file.name}<br>
+            <strong>大小:</strong> ${(file.size / 1024).toFixed(2)} KB
+        `;
+    }
+}
+
+function previewFeaturePDB() {
+    const file = document.getElementById('feature-pdb').files[0];
+    if (file) {
+        featurePDBFile = file;
+        document.getElementById('feature-pdb-preview').innerHTML = `
+            <strong>已选择:</strong> ${file.name}<br>
+            <strong>大小:</strong> ${(file.size / 1024).toFixed(2)} KB
+        `;
+    }
+}
+
+function showLoading(message) {
+    document.getElementById('loading-message').textContent = message || '处理中...';
+    document.getElementById('loading-area').style.display = 'flex';
+}
+
+function hideLoading() {
+    document.getElementById('loading-area').style.display = 'none';
+}
+
+function predictBindingSites() {
+    if (!uploadedPDBFile) {
+        alert('请先上传PDB文件');
+        return;
+    }
+
+    const algorithm = document.getElementById('algorithm-select').value;
+    const threshold = parseFloat(document.getElementById('threshold-slider').value);
+
+    showLoading('正在预测结合位点...');
+
+    const formData = new FormData();
+    formData.append('file', uploadedPDBFile);
+
+    fetch('/api/ml-binding/upload-pdb', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            return fetch('/api/ml-binding/predict', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pdb_file: data.filepath,
+                    algorithm: algorithm,
+                    threshold: threshold
+                })
+            });
+        } else {
+            throw new Error(data.error);
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        displayPredictResult(data);
+    })
+    .catch(error => {
+        hideLoading();
+        alert('预测失败: ' + error.message);
+    });
+}
+
+function displayPredictResult(data) {
+    const resultDiv = document.getElementById('predict-result');
+    const displayDiv = document.getElementById('predict-result-display');
+
+    resultDiv.style.display = 'block';
+
+    if (!data.success) {
+        displayDiv.innerHTML = `<div class="error-box">❌ ${data.error}</div>`;
+        return;
+    }
+
+    let html = `
+        <div class="success-box">
+            <h4>✅ 预测完成</h4>
+            <p><strong>算法:</strong> ${data.algorithm}</p>
+            <p><strong>总残基数:</strong> ${data.total_residues}</p>
+            <p><strong>预测为结合位点:</strong> ${data.predicted_binding}</p>
+            <p><strong>阈值:</strong> ${data.threshold.toFixed(4)}${data.model_optimal_threshold && data.model_optimal_threshold !== 0.5 ? '（模型自动优化）' : ''}</p>
+        </div>
+        <h4>结合位点残基 (Top 20)</h4>
+        <table class="result-table">
+            <thead>
+                <tr>
+                    <th>残基ID</th>
+                    <th>残基名称</th>
+                    <th>链</th>
+                    <th>概率</th>
+                    <th>坐标 (X, Y, Z)</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    data.binding_residues.slice(0, 20).forEach(residue => {
+        const probClass = residue.probability > 0.7 ? 'high-probability' : 
+                         residue.probability > 0.5 ? 'medium-probability' : 'low-probability';
+        
+        html += `
+            <tr class="${probClass}">
+                <td>${residue.residue_num}</td>
+                <td>${residue.residue_name}</td>
+                <td>${residue.chain_id}</td>
+                <td>${residue.probability.toFixed(3)}</td>
+                <td>(${residue.coordinates[0].toFixed(2)}, ${residue.coordinates[1].toFixed(2)}, ${residue.coordinates[2].toFixed(2)})</td>
+            </tr>
+        `;
+    });
+
+    html += '</tbody></table>';
+    displayDiv.innerHTML = html;
+}
+
+function loadAlgorithms() {
+    fetch('/api/ml-binding/algorithms')
+        .then(response => response.json())
+        .then(data => {
+            displayAlgorithms(data.algorithms);
+        })
+        .catch(error => {
+            alert('加载算法失败: ' + error.message);
+        });
+}
+
+function displayAlgorithms(algorithms) {
+    const container = document.getElementById('algorithms-list');
+    let html = '';
+
+    algorithms.forEach(algo => {
+        html += `
+            <div class="algorithm-item">
+                <h4>${algo.display_name} (${algo.name})</h4>
+                <p><strong>描述:</strong> ${algo.description}</p>
+                <p><strong>优势:</strong></p>
+                <ul>
+                    ${algo.advantages.map(adv => `<li>${adv}</li>`).join('')}
+                </ul>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+
+function onDataSourceChange() {
+    const source = document.getElementById('train-data-source').value;
+    const options = document.getElementById('real-data-options');
+    options.style.display = source === 'real' ? 'block' : 'none';
+}
+
+function trainModel() {
+    const algorithm = document.getElementById('train-algorithm-select').value;
+    const dataSource = document.getElementById('train-data-source').value;
+    const maxEntries = parseInt(document.getElementById('train-max-entries').value) || 5000;
+
+    const sourceLabel = dataSource === 'real' ? '真实BioLiP数据' : '合成数据';
+    if (!confirm(`确定要训练 ${algorithm} 模型吗？\n\n数据源: ${sourceLabel}${dataSource === 'real' ? ` (${maxEntries} 条)` : ''}\n\n${dataSource === 'real' ? '注意: 真实数据训练可能需要较长时间。' : '注意: 这将使用合成数据进行演示训练。'}`)) {
+        return;
+    }
+
+    const resultDiv = document.getElementById('train-result');
+    const displayDiv = document.getElementById('train-result-display');
+    resultDiv.style.display = 'block';
+    displayDiv.innerHTML = `
+        <div class="info-box">
+            <h4>⏳ 训练进度</h4>
+            <div style="background:#e9ecef;border-radius:8px;overflow:hidden;height:28px;margin:12px 0;">
+                <div id="train-progress-bar" style="background:linear-gradient(90deg,#28a745,#20c997);height:100%;width:0%;transition:width 0.3s ease;display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;font-size:13px;">
+                    0%
+                </div>
+            </div>
+            <div id="train-progress-stage" style="font-size:0.9em;color:#495057;margin-top:4px;">准备中...</div>
+            <div id="train-progress-log" style="margin-top:12px;max-height:200px;overflow-y:auto;font-size:0.82em;color:#6c757d;font-family:monospace;background:#f8f9fa;padding:8px;border-radius:4px;"></div>
+        </div>
+    `;
+
+    const progressBar = document.getElementById('train-progress-bar');
+    const progressStage = document.getElementById('train-progress-stage');
+    const progressLog = document.getElementById('train-progress-log');
+    const logLines = [];
+
+    fetch('/api/ml-binding/train-model-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            algorithm: algorithm,
+            data_source: dataSource,
+            max_entries: maxEntries
+        })
+    })
+    .then(response => {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        function read() {
+            reader.read().then(({ done, value }) => {
+                if (done) return;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            if (data.type === 'progress') {
+                                progressBar.style.width = data.progress + '%';
+                                progressBar.textContent = data.progress + '%';
+                                progressStage.textContent = data.message;
+                                logLines.push(`[${data.progress}%] ${data.message}`);
+                                progressLog.innerHTML = logLines.map(l => '<div>' + l + '</div>').join('');
+                                progressLog.scrollTop = progressLog.scrollHeight;
+                            } else if (data.type === 'result') {
+                                displayTrainResult(data);
+                            }
+                        } catch (e) {}
+                    }
+                }
+                read();
+            });
+        }
+        read();
+    })
+    .catch(error => {
+        displayDiv.innerHTML = `<div class="error-box">❌ 训练失败: ${error.message}</div>`;
+    });
+}
+
+function displayTrainResult(data) {
+    const resultDiv = document.getElementById('train-result');
+    const displayDiv = document.getElementById('train-result-display');
+
+    resultDiv.style.display = 'block';
+
+    if (!data.success) {
+        displayDiv.innerHTML = `<div class="error-box">❌ ${data.error}</div>`;
+        return;
+    }
+
+    let html = `
+        <div class="success-box">
+            <h4>✅ 训练完成</h4>
+            <p><strong>算法:</strong> ${data.algorithm}</p>
+            <p><strong>数据源:</strong> ${data.data_source || data.note || '-'}</p>
+            <p><strong>模型路径:</strong> ${data.model_path}</p>
+            <p><strong>训练样本数:</strong> ${data.training_samples}</p>
+            <p><strong>测试样本数:</strong> ${data.test_samples}</p>
+        </div>
+        ${data.data_stats ? `
+        <h4>📊 数据统计</h4>
+        <table class="result-table">
+            <thead><tr><th>指标</th><th>值</th></tr></thead>
+            <tbody>
+                <tr><td>处理蛋白数</td><td>${data.data_stats.total_entries_processed || data.data_stats.total_pdbs_processed || '-'}</td></tr>
+                <tr><td>总残基数</td><td>${data.data_stats.total_residues || '-'}</td></tr>
+                <tr><td>结合残基数</td><td>${data.data_stats.total_binding || '-'}</td></tr>
+                <tr><td>结合残基比例</td><td>${data.data_stats.final_binding_ratio ? (data.data_stats.final_binding_ratio * 100).toFixed(2) + '%' : '-'}</td></tr>
+                <tr><td>特征维度</td><td>${data.data_stats.final_X_shape ? data.data_stats.final_X_shape[1] + '维' : '-'}</td></tr>
+            </tbody>
+        </table>
+        ` : ''}
+        <h4>评估结果</h4>
+        <table class="result-table">
+            <thead>
+                <tr>
+                    <th>指标</th>
+                    <th>值</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>准确率 (Accuracy)</td><td>${data.evaluation.accuracy.toFixed(4)}</td></tr>
+                <tr><td>精确率 (Precision)</td><td>${data.evaluation.precision.toFixed(4)}</td></tr>
+                <tr><td>召回率 (Recall)</td><td>${data.evaluation.recall.toFixed(4)}</td></tr>
+                <tr><td>F1分数</td><td>${data.evaluation.f1.toFixed(4)}</td></tr>
+                <tr><td>AUC</td><td>${data.evaluation.auc.toFixed(4)}</td></tr>
+                ${data.evaluation.optimal_threshold ? `<tr><td>最优分类阈值</td><td><strong>${data.evaluation.optimal_threshold.toFixed(4)}</strong></td></tr>` : ''}
+            </tbody>
+        </table>
+        ${data.smote_applied ? '<div class="info-box">✅ 已应用 SMOTE 过采样处理类别不平衡</div>' : ''}
+    `;
+
+    displayDiv.innerHTML = html;
+}
+
+function loadModels() {
+    fetch('/api/ml-binding/models')
+        .then(response => response.json())
+        .then(data => {
+            displayModels(data);
+        })
+        .catch(error => {
+            alert('加载模型失败: ' + error.message);
+        });
+}
+
+function displayModels(data) {
+    const container = document.getElementById('models-list');
+
+    if (data.total_models === 0) {
+        container.innerHTML = '<p>暂无训练好的模型</p>';
+        return;
+    }
+
+    let html = `<p><strong>共有 ${data.total_models} 个模型</strong></p>`;
+
+    data.models.forEach(model => {
+        html += `
+            <div class="model-item">
+                <h4>${model.algorithm}</h4>
+                <p><strong>文件:</strong> ${model.filename}</p>
+                <p><strong>路径:</strong> ${model.path}</p>
+                <p><strong>大小:</strong> ${model.size_kb} KB</p>
+                <button class="btn-delete" onclick="deleteModel('${model.algorithm}')">🗑️ 删除模型</button>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+
+function deleteModel(algorithm) {
+    if (!confirm(`确定要删除 ${algorithm} 模型吗？`)) {
+        return;
+    }
+
+    fetch(`/api/ml-binding/models/${algorithm}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('模型删除成功');
+            loadModels();
+        } else {
+            alert('删除失败: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('删除失败: ' + error.message);
+    });
+}
+
+function analyzeFeatures() {
+    if (!featurePDBFile) {
+        alert('请先上传PDB文件');
+        return;
+    }
+
+    showLoading('正在分析特征...');
+
+    const formData = new FormData();
+    formData.append('file', featurePDBFile);
+
+    fetch('/api/ml-binding/upload-pdb', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            return fetch('/api/ml-binding/feature-info', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pdb_file: data.filepath })
+            });
+        } else {
+            throw new Error(data.error);
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        displayFeatureResult(data);
+    })
+    .catch(error => {
+        hideLoading();
+        alert('特征分析失败: ' + error.message);
+    });
+}
+
+function displayFeatureResult(data) {
+    const resultDiv = document.getElementById('feature-result');
+    const displayDiv = document.getElementById('feature-result-display');
+
+    resultDiv.style.display = 'block';
+
+    if (!data.success) {
+        displayDiv.innerHTML = `<div class="error-box">❌ ${data.error}</div>`;
+        return;
+    }
+
+    let html = `
+        <div class="success-box">
+            <h4>✅ 特征分析完成</h4>
+            <p><strong>残基总数:</strong> ${data.num_residues}</p>
+            <p><strong>特征维度:</strong> ${data.num_features}</p>
+        </div>
+        <h4>特征名称</h4>
+        <div style="display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0;">
+            ${data.feature_names.map(name => `<span style="background: #e9ecef; padding: 5px 10px; border-radius: 3px; font-size: 12px;">${name}</span>`).join('')}
+        </div>
+        <h4>特征统计 (前10个特征)</h4>
+        <table class="result-table">
+            <thead>
+                <tr>
+                    <th>特征</th>
+                    <th>均值</th>
+                    <th>标准差</th>
+                    <th>最小值</th>
+                    <th>最大值</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    for (let i = 0; i < Math.min(10, data.feature_names.length); i++) {
+        html += `
+            <tr>
+                <td>${data.feature_names[i]}</td>
+                <td>${data.feature_statistics.mean[i].toFixed(4)}</td>
+                <td>${data.feature_statistics.std[i].toFixed(4)}</td>
+                <td>${data.feature_statistics.min[i].toFixed(4)}</td>
+                <td>${data.feature_statistics.max[i].toFixed(4)}</td>
+            </tr>
+        `;
+    }
+
+    html += '</tbody></table>';
+    html += '<h4>残基摘要 (前20个)</h4>';
+    html += '<table class="result-table"><thead><tr><th>残基ID</th><th>残基名称</th><th>链</th></tr></thead><tbody>';
+    
+    data.residue_summary.forEach(res => {
+        html += `<tr><td>${res.residue_id}</td><td>${res.residue_name}</td><td>${res.chain_id}</td></tr>`;
+    });
+
+    html += '</tbody></table>';
+    displayDiv.innerHTML = html;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadAlgorithms();
+    loadModels();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,602 @@
+{% extends "base.html" %}
+
+{% block title %}深度学习 - GCN关键残基预测{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="header">
+        <h1>🧠 深度学习预测</h1>
+        <p>GCN图神经网络用于蛋白质关键残基识别</p>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('upload')">上传模型</button>
+        <button class="tab-btn" onclick="showTab('predict')">预测</button>
+        <button class="tab-btn" onclick="showTab('onnx')">ONNX预测</button>
+        <button class="tab-btn" onclick="showTab('models')">模型管理</button>
+    </div>
+
+    <div id="upload-tab" class="tab-content active">
+        <div class="card">
+            <h3>📤 上传GCN模型</h3>
+            <p class="info-text">请将训练好的GCN模型文件（gcn_model.pth）上传到系统</p>
+            
+            <div class="model-info-box">
+                <div class="info-item">
+                    <span class="info-label">模型格式:</span>
+                    <span class="info-value">.pth (PyTorch格式)</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">文件名:</span>
+                    <span class="info-value">gcn_model.pth</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">存放路径:</span>
+                    <span class="info-value">data/models/</span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>上传模型文件 (.pth)</label>
+                <input type="file" id="model-file" accept=".pth" onchange="previewModelFile()">
+                <div id="model-preview" class="file-preview"></div>
+            </div>
+
+            <button class="btn btn-primary" onclick="uploadModel()">
+                📤 上传模型文件
+            </button>
+
+            <div class="warning-box">
+                <strong>⚠️ 说明:</strong>
+                <p>本系统仅支持模型推理，不提供训练功能。请使用外部程序训练GCN模型，然后上传模型文件进行预测。</p>
+                <p>模型文件必须命名为 <code>gcn_model.pth</code></p>
+            </div>
+        </div>
+
+        <div class="card" id="upload-result" style="display: none;">
+            <h3>上传结果</h3>
+            <div id="upload-result-display"></div>
+        </div>
+    </div>
+
+    <div id="predict-tab" class="tab-content">
+        <div class="card">
+            <h3>🔍 关键残基预测 (PyTorch)</h3>
+            <p>使用GCN模型预测蛋白质关键残基</p>
+
+            <div class="form-group">
+                <label>PDB文件</label>
+                <input type="file" id="predict-pdb" accept=".pdb" onchange="previewPDBFile()">
+                <div id="predict-pdb-preview" class="file-preview"></div>
+            </div>
+
+            <button class="btn btn-primary" onclick="predictWithPyTorch()">
+                🔍 使用PyTorch预测
+            </button>
+
+            <div class="info-box">
+                <strong>💡 提示:</strong>
+                <p>首次使用时会加载PyTorch库，可能需要几秒钟。</p>
+                <p>如果经常使用，建议转换为ONNX格式以获得更快的推理速度。</p>
+            </div>
+        </div>
+
+        <div class="card" id="predict-result" style="display: none;">
+            <h3>预测结果</h3>
+            <div id="predict-result-display"></div>
+        </div>
+    </div>
+
+    <div id="onnx-tab" class="tab-content">
+        <div class="card">
+            <h3>⚡ 关键残基预测 (ONNX)</h3>
+            <p>使用ONNX格式的GCN模型进行快速预测</p>
+
+            <div class="form-group">
+                <label>PDB文件</label>
+                <input type="file" id="onnx-predict-pdb" accept=".pdb" onchange="previewONNXPDB()">
+                <div id="onnx-pdb-preview" class="file-preview"></div>
+            </div>
+
+            <button class="btn btn-success" onclick="convertAndPredict()">
+                ⚡ 转换并预测 (ONNX)
+            </button>
+
+            <div class="info-box">
+                <strong>⚡ 性能优势:</strong>
+                <ul>
+                    <li>推理速度比PyTorch快 2-5 倍</li>
+                    <li>内存占用更低</li>
+                    <li>无需加载完整的PyTorch库</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card" id="onnx-result" style="display: none;">
+            <h3>ONNX预测结果</h3>
+            <div id="onnx-result-display"></div>
+        </div>
+    </div>
+
+    <div id="models-tab" class="tab-content">
+        <div class="card">
+            <h3>📚 模型管理</h3>
+            <button class="btn btn-secondary" onclick="loadModels()">
+                🔄 刷新模型列表
+            </button>
+            <div id="models-list" class="models-container"></div>
+        </div>
+    </div>
+
+    <div id="loading-area" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <div class="loading-message" id="loading-message">处理中...</div>
+        </div>
+    </div>
+</div>
+
+<style>
+.model-info-box {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.warning-box {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 8px;
+    padding: 15px;
+    margin: 20px 0;
+}
+
+.warning-box strong {
+    color: #856404;
+}
+
+.warning-box p {
+    margin: 10px 0;
+}
+
+.info-box {
+    background: #d1ecf1;
+    border: 1px solid #bee5eb;
+    border-radius: 8px;
+    padding: 15px;
+    margin: 20px 0;
+}
+
+.info-box ul {
+    margin: 10px 0 0 20px;
+}
+
+.info-box li {
+    margin: 5px 0;
+}
+
+.info-text {
+    color: #6c757d;
+    margin-bottom: 15px;
+}
+
+.models-container {
+    margin-top: 20px;
+}
+
+.model-item {
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 15px;
+    margin: 10px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.model-item-info {
+    flex: 1;
+}
+
+.model-item-name {
+    font-weight: bold;
+    color: #0d6efd;
+    margin-bottom: 5px;
+}
+
+.model-item-path {
+    color: #6c757d;
+    font-family: monospace;
+    font-size: 14px;
+}
+
+.model-item-size {
+    color: #28a745;
+}
+
+.model-item-actions button {
+    margin-left: 10px;
+}
+
+.residue-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.residue-item {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    padding: 10px;
+    margin: 8px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.residue-info {
+    flex: 1;
+}
+
+.residue-name {
+    font-weight: bold;
+    color: #0d6efd;
+}
+
+.residue-probability {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.residue-coordinates {
+    color: #6c757d;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+.result-summary {
+    background: #d4edda;
+    border-left: 4px solid #28a745;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.result-summary h4 {
+    margin-top: 0;
+    color: #155724;
+}
+</style>
+
+<script>
+let currentPDBFile = null;
+let currentONNXPDBFile = null;
+
+function showTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    document.getElementById(tabName + '-tab').classList.add('active');
+    event.target.classList.add('active');
+}
+
+function previewModelFile() {
+    const fileInput = document.getElementById('model-file');
+    const preview = document.getElementById('model-preview');
+    
+    if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        preview.innerHTML = `
+            <div class="file-info">
+                <span class="file-icon">📦</span>
+                <div>
+                    <div class="file-name">${file.name}</div>
+                    <div class="file-size">${(file.size / 1024 / 1024).toFixed(2)} MB</div>
+                </div>
+            </div>
+        `;
+    }
+}
+
+function previewPDBFile() {
+    const fileInput = document.getElementById('predict-pdb');
+    const preview = document.getElementById('predict-pdb-preview');
+    
+    if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        preview.innerHTML = `
+            <div class="file-info">
+                <span class="file-icon">🧬</span>
+                <div>
+                    <div class="file-name">${file.name}</div>
+                    <div class="file-size">${(file.size / 1024).toFixed(2)} KB</div>
+                </div>
+            </div>
+        `;
+        currentPDBFile = file;
+    }
+}
+
+function previewONNXPDB() {
+    const fileInput = document.getElementById('onnx-predict-pdb');
+    const preview = document.getElementById('onnx-pdb-preview');
+    
+    if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        preview.innerHTML = `
+            <div class="file-info">
+                <span class="file-icon">🧬</span>
+                <div>
+                    <div class="file-name">${file.name}</div>
+                    <div class="file-size">${(file.size / 1024).toFixed(2)} KB</div>
+                </div>
+            </div>
+        `;
+        currentONNXPDBFile = file;
+    }
+}
+
+function uploadModel() {
+    const fileInput = document.getElementById('model-file');
+    
+    if (fileInput.files.length === 0) {
+        alert('请选择模型文件');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('model', fileInput.files[0]);
+    
+    showLoading('正在上传模型文件...');
+    
+    fetch('/api/deep-learning/upload-model', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            displayUploadResult(data);
+        } else {
+            alert('上传失败: ' + data.error);
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('错误: ' + error.message);
+    });
+}
+
+function predictWithPyTorch() {
+    if (!currentPDBFile) {
+        alert('请先选择PDB文件');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', currentPDBFile);
+    
+    showLoading('正在使用PyTorch进行预测...');
+    
+    fetch('/api/deep-learning/upload-pdb', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            return fetch('/api/deep-learning/predict-key-residues', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    pdb_file: data.filepath
+                })
+            });
+        } else {
+            throw new Error(data.error);
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            displayPredictResults(data, 'predict');
+        } else {
+            alert('预测失败: ' + data.error);
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('错误: ' + error.message);
+    });
+}
+
+function convertAndPredict() {
+    if (!currentONNXPDBFile) {
+        alert('请先选择PDB文件');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', currentONNXPDBFile);
+    
+    showLoading('正在转换为ONNX并预测...');
+    
+    fetch('/api/deep-learning/upload-pdb', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            return fetch('/api/deep-learning/predict-onnx', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    pdb_file: data.filepath
+                })
+            });
+        } else {
+            throw new Error(data.error);
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            displayPredictResults(data, 'onnx');
+        } else {
+            alert('预测失败: ' + data.error);
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('错误: ' + error.message);
+    });
+}
+
+function loadModels() {
+    showLoading('正在加载模型列表...');
+    
+    fetch('/api/deep-learning/models')
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        displayModels(data.models);
+    })
+    .catch(error => {
+        hideLoading();
+        alert('加载失败: ' + error.message);
+    });
+}
+
+function displayUploadResult(data) {
+    const resultsDiv = document.getElementById('upload-result');
+    const displayDiv = document.getElementById('upload-result-display');
+    
+    resultsDiv.style.display = 'block';
+    
+    if (data.success) {
+        displayDiv.innerHTML = `
+            <div class="result-summary">
+                <h4>✅ 模型上传成功</h4>
+                <div><strong>模型名称:</strong> ${data.model_name}</div>
+                <div><strong>文件路径:</strong> ${data.filepath}</div>
+                <div><strong>文件大小:</strong> ${data.size_mb} MB</div>
+                ${data.note ? `<div class="note"><strong>注意:</strong> ${data.note}</div>` : ''}
+            </div>
+        `;
+    } else {
+        displayDiv.innerHTML = `
+            <div class="result-summary" style="background: #f8d7da; border-left-color: #dc3545;">
+                <h4>❌ 上传失败</h4>
+                <div><strong>错误信息:</strong> ${data.error}</div>
+            </div>
+        `;
+    }
+}
+
+function displayPredictResults(data, type) {
+    const resultsDiv = document.getElementById(type === 'onnx' ? 'onnx-result' : 'predict-result');
+    const displayDiv = document.getElementById(type === 'onnx' ? 'onnx-result-display' : 'predict-result-display');
+    
+    resultsDiv.style.display = 'block';
+    
+    displayDiv.innerHTML = `
+        <div class="result-summary">
+            <h4>✅ ${data.model_type}预测完成</h4>
+            <div><strong>总残基数:</strong> ${data.total_residues}</div>
+            <div><strong>预测关键残基数:</strong> ${data.key_residues_count}</div>
+            ${data.inference_time_ms ? `<div><strong>推理时间:</strong> ${data.inference_time_ms}ms</div>` : ''}
+            ${data.note ? `<div class="note"><strong>注意:</strong> ${data.note}</div>` : ''}
+        </div>
+        <div class="residue-list">
+            <h5>🔬 关键残基列表 (前20个)</h5>
+            ${data.key_residues.map(res => `
+                <div class="residue-item">
+                    <div class="residue-info">
+                        <span class="residue-name">${res.residue_name}${res.residue_id}</span>
+                        <span>(链${res.chain_id})</span>
+                        <span class="residue-probability">置信度: ${(res.probability * 100).toFixed(1)}%</span>
+                    </div>
+                    <div class="residue-coordinates">
+                        坐标: [${res.coordinates.map(c => c.toFixed(2)).join(', ')}]
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function displayModels(models) {
+    const modelsList = document.getElementById('models-list');
+    
+    if (models.length === 0) {
+        modelsList.innerHTML = `
+            <div class="info-box">
+                <p>暂无模型文件</p>
+                <p>请上传训练好的GCN模型文件（gcn_model.pth）</p>
+            </div>
+        `;
+        return;
+    }
+    
+    modelsList.innerHTML = models.map(model => `
+        <div class="model-item">
+            <div class="model-item-info">
+                <div class="model-item-name">${model.name}</div>
+                <div class="model-item-path">${model.path}</div>
+                <div class="model-item-size">${model.size_mb} MB</div>
+            </div>
+            <div class="model-item-actions">
+                <button class="btn btn-danger" onclick="deleteModel('${model.name}')">
+                    🗑️ 删除
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function deleteModel(modelName) {
+    if (!confirm(`确定要删除模型 ${modelName} 吗？`)) {
+        return;
+    }
+    
+    showLoading('正在删除模型...');
+    
+    fetch(`/api/deep-learning/models/${modelName}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            alert('模型已删除');
+            loadModels();
+        } else {
+            alert('删除失败: ' + data.error);
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('错误: ' + error.message);
+    });
+}
+
+function showLoading(message) {
+    document.getElementById('loading-message').textContent = message;
+    document.getElementById('loading-area').style.display = 'flex';
+}
+
+function hideLoading() {
+    document.getElementById('loading-area').style.display = 'none';
+}
+</script>
+{% endblock %}

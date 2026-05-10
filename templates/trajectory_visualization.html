@@ -1,0 +1,1063 @@
+{% extends "base.html" %}
+
+{% block title %}轨迹可视化增强{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="header">
+        <h1>🎨 轨迹可视化增强</h1>
+        <p>分子动力学轨迹的高级可视化分析</p>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('overview')">概览</button>
+        <button class="tab-btn" onclick="showTab('3d')">3D轨迹</button>
+        <button class="tab-btn" onclick="showTab('animation')">轨迹动画</button>
+        <button class="tab-btn" onclick="showTab('rmsd')">RMSD图</button>
+        <button class="tab-btn" onclick="showTab('rmsf')">RMSF图</button>
+        <button class="tab-btn" onclick="showTab('heatmap')">构象热图</button>
+        <button class="tab-btn" onclick="showTab('network')">相互作用网络</button>
+        <button class="tab-btn" onclick="showTab('dashboard')">综合仪表板</button>
+    </div>
+
+    <div id="overview-tab" class="tab-content active">
+        <div class="card">
+            <h3>系统状态</h3>
+            <button class="btn btn-secondary" onclick="loadStatus()">
+                🔄 刷新状态
+            </button>
+            <div id="status-display"></div>
+        </div>
+
+        <div class="card">
+            <h3>可视化文件列表</h3>
+            <button class="btn btn-secondary" onclick="loadVisualizations()">
+                📂 加载文件列表
+            </button>
+            <button class="btn btn-danger" onclick="clearVisualizations()">
+                🗑️ 清除所有文件
+            </button>
+            <div id="visualizations-list"></div>
+        </div>
+    </div>
+
+    <div id="3d-tab" class="tab-content">
+        <div class="card">
+            <h3>3D轨迹可视化</h3>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>轨迹数据 (JSON)</label>
+                    <textarea id="3d-trajectory-data" rows="6" placeholder='{"coordinates": [[...], [...]], "residue_names": ["ALA", "ARG"], ...}'></textarea>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>关键残基 (逗号分隔)</label>
+                    <input type="text" id="3d-key-residues" placeholder="例如: 10, 20, 30">
+                </div>
+                <div class="form-group">
+                    <label>帧索引 (逗号分隔)</label>
+                    <input type="text" id="3d-frame-indices" placeholder="例如: 0, 50, 100">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="3d-show-backbone" checked>
+                    显示主链
+                </label>
+            </div>
+
+            <button class="btn btn-primary" onclick="create3DPlot()">
+                🎨 创建3D轨迹图
+            </button>
+        </div>
+
+        <div class="card" id="3d-results" style="display: none;">
+            <h3>3D轨迹结果</h3>
+            <div id="3d-display"></div>
+        </div>
+    </div>
+
+    <div id="animation-tab" class="tab-content">
+        <div class="card">
+            <h3>轨迹动画生成</h3>
+            
+            <div class="form-group">
+                <label>轨迹数据 (JSON)</label>
+                <textarea id="anim-trajectory-data" rows="6" placeholder='{"coordinates": [[...], [...]], ...}'></textarea>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>输出格式</label>
+                    <select id="anim-format">
+                        <option value="gif">GIF动画</option>
+                        <option value="mp4">MP4视频</option>
+                        <option value="avi">AVI视频</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>帧间隔 (ms)</label>
+                    <input type="number" id="anim-interval" value="100" min="10" max="1000">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>关键残基 (逗号分隔)</label>
+                <input type="text" id="anim-key-residues" placeholder="例如: 10, 20, 30">
+            </div>
+
+            <button class="btn btn-primary" onclick="createAnimation()">
+                🎬 创建轨迹动画
+            </button>
+        </div>
+
+        <div class="card" id="animation-results" style="display: none;">
+            <h3>动画生成结果</h3>
+            <div id="animation-display"></div>
+        </div>
+    </div>
+
+    <div id="rmsd-tab" class="tab-content">
+        <div class="card">
+            <h3>RMSD图表</h3>
+            
+            <div class="form-group">
+                <label>RMSD数据 (JSON)</label>
+                <textarea id="rmsd-data" rows="6" placeholder='{"time_points": [0, 1, 2, ...], "rmsd_values": [0.2, 0.3, 0.4, ...], "rmsd_std": [0.02, 0.03, 0.04, ...]}'></textarea>
+            </div>
+
+            <button class="btn btn-primary" onclick="createRMSDPlot()">
+                📊 创建RMSD图
+            </button>
+        </div>
+
+        <div class="card" id="rmsd-results" style="display: none;">
+            <h3>RMSD图结果</h3>
+            <div id="rmsd-display"></div>
+        </div>
+    </div>
+
+    <div id="rmsf-tab" class="tab-content">
+        <div class="card">
+            <h3>RMSF图表</h3>
+            
+            <div class="form-group">
+                <label>RMSF数据 (JSON)</label>
+                <textarea id="rmsf-data" rows="6" placeholder='{"residue_ids": [1, 2, 3, ...], "residue_names": ["ALA", "ARG", ...], "rmsf_values": [0.1, 0.2, 0.3, ...], "key_residues": [10, 20, 30]}'></textarea>
+            </div>
+
+            <button class="btn btn-primary" onclick="createRMSFPlot()">
+                📊 创建RMSF图
+            </button>
+        </div>
+
+        <div class="card" id="rmsf-results" style="display: none;">
+            <h3>RMSF图结果</h3>
+            <div id="rmsf-display"></div>
+        </div>
+    </div>
+
+    <div id="heatmap-tab" class="tab-content">
+        <div class="card">
+            <h3>构象分布热图</h3>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>PCA数据 (JSON)</label>
+                    <textarea id="heatmap-pca-data" rows="4" placeholder='{"coordinates": [[...], [...]], "cluster_labels": [0, 1, 0, 1], "explained_variance": [0.5, 0.3]}'></textarea>
+                </div>
+                <div class="form-group">
+                    <label>t-SNE数据 (JSON)</label>
+                    <textarea id="heatmap-tsne-data" rows="4" placeholder='{"coordinates": [[...], [...]], "cluster_labels": [0, 1, 0, 1]}'></textarea>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="createConformationHeatmap()">
+                🔥 创建构象热图
+            </button>
+        </div>
+
+        <div class="card" id="heatmap-results" style="display: none;">
+            <h3>构象热图结果</h3>
+            <div id="heatmap-display"></div>
+        </div>
+    </div>
+
+    <div id="network-tab" class="tab-content">
+        <div class="card">
+            <h3>相互作用网络图</h3>
+            
+            <div class="form-group">
+                <label>相互作用数据 (JSON)</label>
+                <textarea id="network-data" rows="6" placeholder='{"nodes": [{"id": 0, "name": "ALA10", "x": 0.5, "y": 0.5}, ...], "edges": [{"source": 0, "target": 1, "strength": 1.0}, ...], "key_residues": [10, 20]}'></textarea>
+            </div>
+
+            <button class="btn btn-primary" onclick="createInteractionNetwork()">
+                🕸️ 创建相互作用网络
+            </button>
+        </div>
+
+        <div class="card" id="network-results" style="display: none;">
+            <h3>相互作用网络结果</h3>
+            <div id="network-display"></div>
+        </div>
+    </div>
+
+    <div id="dashboard-tab" class="tab-content">
+        <div class="card">
+            <h3>综合仪表板</h3>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>轨迹数据 (JSON)</label>
+                    <textarea id="dash-trajectory-data" rows="4" placeholder='{"n_frames": 1000, "simulation_time": 100, ...}'></textarea>
+                </div>
+                <div class="form-group">
+                    <label>分析数据 (JSON)</label>
+                    <textarea id="dash-analysis-data" rows="4" placeholder='{"rmsd": {...}, "rmsf": {...}, "pca": {...}, "key_residues": [...]}'></textarea>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>输出格式</label>
+                <select id="dash-format">
+                    <option value="html">HTML仪表板</option>
+                    <option value="image">图片仪表板</option>
+                </select>
+            </div>
+
+            <button class="btn btn-primary" onclick="createDashboard()">
+                📈 创建综合仪表板
+            </button>
+        </div>
+
+        <div class="card" id="dashboard-results" style="display: none;">
+            <h3>仪表板创建结果</h3>
+            <div id="dashboard-display"></div>
+        </div>
+    </div>
+
+    <div id="loading-area" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <div class="loading-message" id="loading-message">处理中...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    document.getElementById(tabName + '-tab').classList.add('active');
+    event.target.classList.add('active');
+}
+
+function loadStatus() {
+    showLoading('正在加载系统状态...');
+    
+    fetch('/api/trajectory-visualization/status')
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        displayStatus(data);
+    })
+    .catch(error => {
+        hideLoading();
+        alert('加载失败: ' + error.message);
+    });
+}
+
+function displayStatus(data) {
+    const statusDiv = document.getElementById('status-display');
+    
+    statusDiv.innerHTML = `
+        <div class="status-section">
+            <h4>系统状态</h4>
+            <div class="status-item">
+                <span class="status-label">状态:</span>
+                <span class="status-badge ${data.status}">${data.status}</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Matplotlib:</span>
+                <span class="status-badge ${data.matplotlib_available ? 'available' : 'unavailable'}">
+                    ${data.matplotlib_available ? '✅ 可用' : '❌ 不可用'}
+                </span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">3D支持:</span>
+                <span class="status-badge ${data.mpl_3d_available ? 'available' : 'unavailable'}">
+                    ${data.mpl_3d_available ? '✅ 可用' : '❌ 不可用'}
+                </span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">输出目录:</span>
+                <span class="status-value">${data.output_dir}</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">消息:</span>
+                <span class="status-value">${data.message}</span>
+            </div>
+        </div>
+    `;
+}
+
+function loadVisualizations() {
+    showLoading('正在加载可视化文件列表...');
+    
+    fetch('/api/trajectory-visualization/list-visualizations')
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        displayVisualizations(data);
+    })
+    .catch(error => {
+        hideLoading();
+        alert('加载失败: ' + error.message);
+    });
+}
+
+function displayVisualizations(data) {
+    const listDiv = document.getElementById('visualizations-list');
+    
+    if (data.success && data.files && data.files.length > 0) {
+        const files = data.files.map(file => `
+            <div class="file-item">
+                <div class="file-info">
+                    <span class="file-name">📄 ${file.filename}</span>
+                    <span class="file-size">${(file.size / 1024).toFixed(2)} KB</span>
+                </div>
+                <button class="btn-download" onclick="downloadVisualization('${file.filename}')">
+                    ⬇️ 下载
+                </button>
+            </div>
+        `).join('');
+        
+        listDiv.innerHTML = `
+            <div class="file-list">
+                <div class="file-summary">
+                    <strong>总文件数:</strong> ${data.total_count}
+                </div>
+                ${files}
+            </div>
+        `;
+    } else {
+        listDiv.innerHTML = '<p class="empty-message">暂无可视化文件</p>';
+    }
+}
+
+function downloadVisualization(filename) {
+    window.location.href = `/api/trajectory-visualization/download/${filename}`;
+}
+
+function clearVisualizations() {
+    if (!confirm('确定要清除所有可视化文件吗？')) {
+        return;
+    }
+    
+    showLoading('正在清除可视化文件...');
+    
+    fetch('/api/trajectory-visualization/clear-visualizations', {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            alert(data.message);
+            loadVisualizations();
+        } else {
+            alert('清除失败: ' + data.error);
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('错误: ' + error.message);
+    });
+}
+
+function create3DPlot() {
+    const dataStr = document.getElementById('3d-trajectory-data').value;
+    const keyResiduesStr = document.getElementById('3d-key-residues').value;
+    const frameIndicesStr = document.getElementById('3d-frame-indices').value;
+    const showBackbone = document.getElementById('3d-show-backbone').checked;
+    
+    if (!dataStr) {
+        alert('请提供轨迹数据');
+        return;
+    }
+    
+    try {
+        const trajectoryData = JSON.parse(dataStr);
+        const keyResidues = keyResiduesStr ? keyResiduesStr.split(',').map(s => parseInt(s.trim())) : [];
+        const frameIndices = frameIndicesStr ? frameIndicesStr.split(',').map(s => parseInt(s.trim())) : [];
+        
+        const params = {
+            trajectory_data: trajectoryData,
+            key_residues: keyResidues,
+            frame_indices: frameIndices,
+            show_backbone: showBackbone
+        };
+        
+        showLoading('正在创建3D轨迹图...');
+        
+        fetch('/api/trajectory-visualization/create-3d-plot', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(params)
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            if (data.success) {
+                displayVisualizationResult('3d', data);
+            } else {
+                alert('创建失败: ' + data.error);
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            alert('错误: ' + error.message);
+        });
+    } catch (error) {
+        alert('JSON解析错误: ' + error.message);
+    }
+}
+
+function createAnimation() {
+    const dataStr = document.getElementById('anim-trajectory-data').value;
+    const format = document.getElementById('anim-format').value;
+    const interval = parseInt(document.getElementById('anim-interval').value);
+    const keyResiduesStr = document.getElementById('anim-key-residues').value;
+    
+    if (!dataStr) {
+        alert('请提供轨迹数据');
+        return;
+    }
+    
+    try {
+        const trajectoryData = JSON.parse(dataStr);
+        const keyResidues = keyResiduesStr ? keyResiduesStr.split(',').map(s => parseInt(s.trim())) : [];
+        
+        const params = {
+            trajectory_data: trajectoryData,
+            output_format: format,
+            frame_interval: interval,
+            key_residues: keyResidues
+        };
+        
+        showLoading('正在创建轨迹动画...');
+        
+        fetch('/api/trajectory-visualization/create-animation', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(params)
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            if (data.success) {
+                displayVisualizationResult('animation', data);
+            } else {
+                alert('创建失败: ' + data.error);
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            alert('错误: ' + error.message);
+        });
+    } catch (error) {
+        alert('JSON解析错误: ' + error.message);
+    }
+}
+
+function createRMSDPlot() {
+    const dataStr = document.getElementById('rmsd-data').value;
+    
+    if (!dataStr) {
+        alert('请提供RMSD数据');
+        return;
+    }
+    
+    try {
+        const rmsdData = JSON.parse(dataStr);
+        
+        const params = {
+            rmsd_data: rmsdData
+        };
+        
+        showLoading('正在创建RMSD图...');
+        
+        fetch('/api/trajectory-visualization/create-rmsd-plot', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(params)
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            if (data.success) {
+                displayVisualizationResult('rmsd', data);
+            } else {
+                alert('创建失败: ' + data.error);
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            alert('错误: ' + error.message);
+        });
+    } catch (error) {
+        alert('JSON解析错误: ' + error.message);
+    }
+}
+
+function createRMSFPlot() {
+    const dataStr = document.getElementById('rmsf-data').value;
+    
+    if (!dataStr) {
+        alert('请提供RMSF数据');
+        return;
+    }
+    
+    try {
+        const rmsfData = JSON.parse(dataStr);
+        
+        const params = {
+            rmsf_data: rmsfData
+        };
+        
+        showLoading('正在创建RMSF图...');
+        
+        fetch('/api/trajectory-visualization/create-rmsf-plot', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(params)
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            if (data.success) {
+                displayVisualizationResult('rmsf', data);
+            } else {
+                alert('创建失败: ' + data.error);
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            alert('错误: ' + error.message);
+        });
+    } catch (error) {
+        alert('JSON解析错误: ' + error.message);
+    }
+}
+
+function createConformationHeatmap() {
+    const pcaDataStr = document.getElementById('heatmap-pca-data').value;
+    const tsneDataStr = document.getElementById('heatmap-tsne-data').value;
+    
+    if (!pcaDataStr && !tsneDataStr) {
+        alert('请至少提供PCA或t-SNE数据');
+        return;
+    }
+    
+    try {
+        const pcaData = pcaDataStr ? JSON.parse(pcaDataStr) : {};
+        const tsneData = tsneDataStr ? JSON.parse(tsneDataStr) : {};
+        
+        const params = {
+            pca_data: pcaData,
+            tsne_data: tsneData
+        };
+        
+        showLoading('正在创建构象热图...');
+        
+        fetch('/api/trajectory-visualization/create-conformation-heatmap', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(params)
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            if (data.success) {
+                displayVisualizationResult('heatmap', data);
+            } else {
+                alert('创建失败: ' + data.error);
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            alert('错误: ' + error.message);
+        });
+    } catch (error) {
+        alert('JSON解析错误: ' + error.message);
+    }
+}
+
+function createInteractionNetwork() {
+    const dataStr = document.getElementById('network-data').value;
+    
+    if (!dataStr) {
+        alert('请提供相互作用数据');
+        return;
+    }
+    
+    try {
+        const interactionData = JSON.parse(dataStr);
+        
+        const params = {
+            interaction_data: interactionData
+        };
+        
+        showLoading('正在创建相互作用网络...');
+        
+        fetch('/api/trajectory-visualization/create-interaction-network', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(params)
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            if (data.success) {
+                displayVisualizationResult('network', data);
+            } else {
+                alert('创建失败: ' + data.error);
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            alert('错误: ' + error.message);
+        });
+    } catch (error) {
+        alert('JSON解析错误: ' + error.message);
+    }
+}
+
+function createDashboard() {
+    const trajectoryDataStr = document.getElementById('dash-trajectory-data').value;
+    const analysisDataStr = document.getElementById('dash-analysis-data').value;
+    const format = document.getElementById('dash-format').value;
+    
+    if (!trajectoryDataStr || !analysisDataStr) {
+        alert('请提供轨迹数据和分析数据');
+        return;
+    }
+    
+    try {
+        const trajectoryData = JSON.parse(trajectoryDataStr);
+        const analysisData = JSON.parse(analysisDataStr);
+        
+        const params = {
+            trajectory_data: trajectoryData,
+            analysis_data: analysisData,
+            output_format: format
+        };
+        
+        showLoading('正在创建综合仪表板...');
+        
+        fetch('/api/trajectory-visualization/create-dashboard', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(params)
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            if (data.success) {
+                displayVisualizationResult('dashboard', data);
+            } else {
+                alert('创建失败: ' + data.error);
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            alert('错误: ' + error.message);
+        });
+    } catch (error) {
+        alert('JSON解析错误: ' + error.message);
+    }
+}
+
+function displayVisualizationResult(type, data) {
+    const resultsDiv = document.getElementById(`${type}-results`);
+    const displayDiv = document.getElementById(`${type}-display`);
+    
+    resultsDiv.style.display = 'block';
+    
+    let html = `
+        <div class="result-summary">
+            <h4>✅ ${data.visualization_type || type} 创建成功</h4>
+            <div><strong>输出文件:</strong> ${data.output_file}</div>
+            <div><strong>消息:</strong> ${data.message}</div>
+            ${data.note ? `<div class="note"><strong>注意:</strong> ${data.note}</div>` : ''}
+        </div>
+    `;
+    
+    if (data.statistics) {
+        html += '<div class="statistics-section"><h5>统计信息</h5>';
+        for (const [key, value] of Object.entries(data.statistics)) {
+            html += `<div><strong>${key}:</strong> ${value}</div>`;
+        }
+        html += '</div>';
+    }
+    
+    if (data.flexible_residues) {
+        html += '<div class="flexible-residues-section"><h5>柔性残基 (Top 10)</h5>';
+        html += '<div class="residue-list">';
+        data.flexible_residues.forEach(res => {
+            html += `
+                <div class="residue-item">
+                    <span class="residue-name">${res.residue_name}${res.residue_id}</span>
+                    <span class="residue-rmsf">${res.rmsf.toFixed(3)} nm</span>
+                </div>
+            `;
+        });
+        html += '</div></div>';
+    }
+    
+    html += `
+        <button class="btn btn-secondary" onclick="downloadVisualization('${data.output_file.split('/').pop()}')">
+            ⬇️ 下载文件
+        </button>
+    `;
+    
+    displayDiv.innerHTML = html;
+}
+
+function showLoading(message) {
+    document.getElementById('loading-message').textContent = message;
+    document.getElementById('loading-area').style.display = 'flex';
+}
+
+function hideLoading() {
+    document.getElementById('loading-area').style.display = 'none';
+}
+
+window.onload = function() {
+    loadStatus();
+    loadVisualizations();
+};
+</script>
+
+<style>
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.tab-btn {
+    padding: 12px 24px;
+    background: #f0f0f0;
+    border: none;
+    cursor: pointer;
+    border-radius: 8px 8px 0 0;
+    margin-right: 8px;
+    font-size: 14px;
+}
+
+.tab-btn.active {
+    background: #1e3a5f;
+    color: white;
+}
+
+.card {
+    background: white;
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.form-row {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 16px;
+}
+
+.form-group {
+    flex: 1;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #333;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.form-group textarea {
+    font-family: 'Courier New', monospace;
+    resize: vertical;
+}
+
+.status-section {
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.status-section h4 {
+    margin: 0 0 12px 0;
+    color: #333;
+}
+
+.status-item {
+    display: flex;
+    justify-content: space-between;
+    margin: 8px 0;
+    font-size: 14px;
+}
+
+.status-label {
+    font-weight: 600;
+    color: #666;
+}
+
+.status-value {
+    color: #333;
+}
+
+.status-badge {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.status-badge.active,
+.status-badge.available {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-badge.inactive,
+.status-badge.unavailable {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.file-list {
+    margin-top: 16px;
+}
+
+.file-summary {
+    padding: 12px;
+    background: #e9ecef;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    font-weight: 600;
+}
+
+.file-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    margin-bottom: 8px;
+}
+
+.file-info {
+    flex: 1;
+}
+
+.file-name {
+    font-weight: 600;
+    color: #333;
+}
+
+.file-size {
+    margin-left: 12px;
+    color: #666;
+    font-size: 13px;
+}
+
+.btn-download {
+    background: #28a745;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.btn-download:hover {
+    background: #218838;
+}
+
+.empty-message {
+    padding: 20px;
+    text-align: center;
+    color: #666;
+    font-style: italic;
+}
+
+.result-summary {
+    padding: 16px;
+    background: #d4edda;
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+
+.result-summary h4 {
+    margin: 0 0 12px 0;
+    color: #155724;
+}
+
+.result-summary div {
+    margin: 4px 0;
+    color: #333;
+}
+
+.statistics-section,
+.flexible-residues-section {
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+
+.statistics-section h5,
+.flexible-residues-section h5 {
+    margin: 0 0 12px 0;
+    color: #333;
+}
+
+.residue-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+}
+
+.residue-item {
+    padding: 8px;
+    background: white;
+    border-radius: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.residue-name {
+    font-weight: 600;
+    color: #1e3a5f;
+}
+
+.residue-rmsf {
+    color: #666;
+    font-size: 13px;
+}
+
+.note {
+    margin-top: 12px;
+    padding: 8px;
+    background: #fff3cd;
+    border-radius: 4px;
+    color: #856404;
+}
+
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.loading-content {
+    background: white;
+    padding: 32px;
+    border-radius: 12px;
+    text-align: center;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #1e3a5f;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 16px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-message {
+    color: #333;
+    font-size: 16px;
+}
+
+.btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-primary {
+    background: #1e3a5f;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #2c4a6f;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+}
+</style>
+{% endblock %}

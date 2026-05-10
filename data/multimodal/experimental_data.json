@@ -1,0 +1,44 @@
+{
+  "EXP001": {
+    "exp_id": "EXP001",
+    "pdb_id": "4AVX",
+    "compound": "奥司他韦",
+    "ic50": 8.60745817738082,
+    "ki": 4.03063422813156,
+    "activity": "inhibitor",
+    "method": "fluorescence",
+    "conditions": {
+      "ph": 7.4,
+      "temperature": 37
+    },
+    "date": "2026-04-10T17:57:27.980215"
+  },
+  "EXP002": {
+    "exp_id": "EXP002",
+    "pdb_id": "4AVX",
+    "compound": "扎那米韦",
+    "ic50": 2.8526065416593434,
+    "ki": 8.32690865315464,
+    "activity": "inhibitor",
+    "method": "enzymatic",
+    "conditions": {
+      "ph": 7.4,
+      "temperature": 37
+    },
+    "date": "2026-04-10T17:57:27.980240"
+  },
+  "EXP003": {
+    "exp_id": "EXP003",
+    "pdb_id": "4GMS",
+    "compound": "帕拉米韦",
+    "ic50": 3.140368147375297,
+    "ki": 1.2018213991464013,
+    "activity": "inhibitor",
+    "method": "fluorescence",
+    "conditions": {
+      "ph": 7.4,
+      "temperature": 37
+    },
+    "date": "2026-04-10T17:57:27.980245"
+  }
+}

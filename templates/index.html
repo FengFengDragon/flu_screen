@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+
+{% block title %}首页 - AI辅助生物医药分子机制探索平台{% endblock %}
+
+{% block content %}
+<div class="hero-section">
+    <div class="hero-content">
+        <h1>AI辅助生物医药分子机制探索平台</h1>
+        <p>基于分子动力学模拟与深度学习的蛋白质构象分析与关键残基识别系统</p>
+        <div class="hero-stats">
+            <div class="stat-item">
+                <div class="stat-number">模拟-分析-验证-优化</div>
+                <div class="stat-label">闭环工作流</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">PCA/t-SNE</div>
+                <div class="stat-label">轨迹降维</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">GNN/Transformer</div>
+                <div class="stat-label">深度学习</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">多模态融合</div>
+                <div class="stat-label">数据整合</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="features-section">
+    <h2>核心功能模块</h2>
+    <div class="features-grid">
+        <div class="feature-card" onclick="window.location.href='/md-simulation'">
+            <div class="feature-icon">🔬</div>
+            <h3>分子动力学模拟</h3>
+            <p>基于GROMACS的蛋白质动态构象分析，包括系统准备、能量最小化、平衡和生产运行</p>
+        </div>
+
+        <div class="feature-card" onclick="window.location.href='/trajectory-analysis'">
+            <div class="feature-icon">📊</div>
+            <h3>轨迹分析</h3>
+            <p>RMSD/RMSF分析、PCA/t-SNE降维、构象聚类与关键帧提取</p>
+        </div>
+
+        <div class="feature-card" onclick="window.location.href='/deep-learning'">
+            <div class="feature-icon">🧠</div>
+            <h3>深度学习模型</h3>
+            <p>GCN关键残基识别、ONNX快速推理、模型上传与管理</p>
+        </div>
+
+        <div class="feature-card" onclick="window.location.href='/ml-binding'">
+            <div class="feature-icon">🤖</div>
+            <h3>机器学习预测</h3>
+            <p>随机森林、SVM、梯度提升等传统ML算法预测蛋白质结合位点残基</p>
+        </div>
+
+        <div class="feature-card" onclick="window.location.href='/virtual-screening'">
+            <div class="feature-icon">💊</div>
+            <h3>虚拟筛选</h3>
+            <p>小分子预处理、Lipinski/ADMET/PAINS过滤、分级对接与结合能计算</p>
+        </div>
+
+        <div class="feature-card" onclick="window.location.href='/trajectory-visualization'">
+            <div class="feature-icon">📈</div>
+            <h3>轨迹可视化</h3>
+            <p>3D轨迹图、RMSD/RMSF图表、构象热图、综合仪表板</p>
+        </div>
+
+        <div class="feature-card" onclick="window.location.href='/workflow'">
+            <div class="feature-icon">⚙️</div>
+            <h3>工作流管理</h3>
+            <p>靶点识别、PDB分析、实验追踪、"模拟-分析-验证-优化"闭环</p>
+        </div>
+    </div>
+</div>
+
+<div class="workflow-section">
+    <h2>研究工作流</h2>
+    <div class="workflow-steps">
+        <div class="step">
+            <div class="step-number">1</div>
+            <div class="step-content">
+                <h3>数据准备与靶点识别</h3>
+                <p>确定病毒靶点、获取3D结构、构建分子库、利用RAG技术收集文献数据</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-number">2</div>
+            <div class="step-content">
+                <h3>机器学习残基预测</h3>
+                <p>传统ML算法（随机森林/SVM/梯度提升）预测蛋白质结合位点关键残基</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-number">3</div>
+            <div class="step-content">
+                <h3>虚拟筛选与分子对接</h3>
+                <p>小分子预处理、Lipinski/ADMET/PAINS过滤、分级对接、结合自由能计算</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-number">4</div>
+            <div class="step-content">
+                <h3>分子动力学模拟验证</h3>
+                <p>GROMACS MD模拟、轨迹分析（RMSD/RMSF/PCA）、构象聚类与可视化</p>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-number">5</div>
+            <div class="step-content">
+                <h3>深度学习与验证迭代</h3>
+                <p>GCN关键残基识别、ONNX推理、实验验证、反馈迭代优化模型</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="tech-stack-section">
+    <h2>技术栈</h2>
+    <div class="tech-grid">
+        <div class="tech-item">
+            <div class="tech-name">GROMACS</div>
+            <div class="tech-desc">分子动力学模拟</div>
+        </div>
+        <div class="tech-item">
+            <div class="tech-name">MDAnalysis</div>
+            <div class="tech-desc">轨迹分析</div>
+        </div>
+        <div class="tech-item">
+            <div class="tech-name">PyTorch</div>
+            <div class="tech-desc">深度学习框架</div>
+        </div>
+        <div class="tech-item">
+            <div class="tech-name">scikit-learn</div>
+            <div class="tech-desc">传统机器学习</div>
+        </div>
+        <div class="tech-item">
+            <div class="tech-name">RDKit</div>
+            <div class="tech-desc">化学信息学</div>
+        </div>
+        <div class="tech-item">
+            <div class="tech-name">Flask</div>
+            <div class="tech-desc">Web框架</div>
+        </div>
+        <div class="tech-item">
+            <div class="tech-name">MySQL</div>
+            <div class="tech-desc">数据库</div>
+        </div>
+        <div class="tech-item">
+            <div class="tech-name">ONNX</div>
+            <div class="tech-desc">模型推理加速</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.hero-section {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 60px 20px;
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.hero-content h1 {
+    font-size: 2.5rem;
+    margin-bottom: 15px;
+    font-weight: 700;
+}
+
+.hero-content p {
+    font-size: 1.2rem;
+    opacity: 0.9;
+    margin-bottom: 30px;
+}
+
+.hero-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 20px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.stat-item {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 20px;
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+}
+
+.stat-number {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 5px;
+}
+
+.stat-label {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
+.features-section, .workflow-section, .tech-stack-section {
+    padding: 40px 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.features-section h2, .workflow-section h2, .tech-stack-section h2 {
+    text-align: center;
+    margin-bottom: 40px;
+    color: #1e3a5f;
+    font-size: 2rem;
+}
+
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 25px;
+}
+
+.feature-card {
+    background: white;
+    border-radius: 16px;
+    padding: 30px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.feature-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.feature-icon {
+    font-size: 3rem;
+    margin-bottom: 15px;
+}
+
+.feature-card h3 {
+    color: #1e3a5f;
+    margin-bottom: 10px;
+    font-size: 1.3rem;
+}
+
+.feature-card p {
+    color: #64748b;
+    line-height: 1.6;
+}
+
+.workflow-steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+}
+
+.step {
+    background: white;
+    border-radius: 12px;
+    padding: 25px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.step-number {
+    width: 50px;
+    height: 50px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 15px;
+}
+
+.step-content h3 {
+    color: #1e3a5f;
+    margin-bottom: 10px;
+}
+
+.step-content p {
+    color: #64748b;
+    line-height: 1.6;
+}
+
+.tech-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 20px;
+}
+
+.tech-item {
+    background: #f8fafc;
+    padding: 25px;
+    border-radius: 12px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.tech-item:hover {
+    background: #e2e8f0;
+    transform: translateY(-3px);
+}
+
+.tech-name {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #1e3a5f;
+    margin-bottom: 8px;
+}
+
+.tech-desc {
+    color: #64748b;
+    font-size: 0.9rem;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+</script>
+{% endblock %}

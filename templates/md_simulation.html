@@ -1,0 +1,897 @@
+{% extends "base.html" %}
+
+{% block title %}分子动力学模拟{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="header">
+        <h1>🧬 分子动力学模拟</h1>
+        <p>使用GROMACS进行蛋白质分子动力学模拟</p>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('quick')">快速开始</button>
+        <button class="tab-btn" onclick="showTab('advanced')">高级设置</button>
+        <button class="tab-btn" onclick="showTab('jobs')">任务列表</button>
+    </div>
+
+    <div id="quick-tab" class="tab-content active">
+        <div class="card">
+            <h3>快速开始</h3>
+            <p>上传PDB文件并运行完整的MD模拟工作流</p>
+            
+            <div class="form-group">
+                <label>PDB文件</label>
+                <input type="file" id="pdb-file" accept=".pdb" onchange="previewPDB()">
+                <div id="pdb-preview" class="file-preview"></div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>模拟时间 (ns)</label>
+                    <input type="number" id="simulation-time" value="100" min="10" max="1000">
+                </div>
+                <div class="form-group">
+                    <label>温度 (K)</label>
+                    <input type="number" id="temperature" value="310" min="100" max="500">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>压力 (bar)</label>
+                    <input type="number" id="pressure" value="1.0" min="0.1" max="10">
+                </div>
+                <div class="form-group">
+                    <label>力场</label>
+                    <select id="forcefield">
+                        <option value="amber99sb-ildn" selected>AMBER99SB-ILDN</option>
+                        <option value="charmm36">CHARMM36</option>
+                        <option value="gromos54a7">GROMOS54A7</option>
+                    </select>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="runFullWorkflow()">
+                🚀 运行完整工作流
+            </button>
+        </div>
+
+        <div class="card">
+            <h3>模拟流程</h3>
+            <div class="workflow-steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h4>系统准备</h4>
+                        <p>生成拓扑文件、定义模拟盒、溶剂化</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h4>加离子</h4>
+                        <p>添加NaCl离子中和电荷</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h4>能量最小化</h4>
+                        <p>优化系统几何结构</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h4>NVT/NPT平衡</h4>
+                        <p>温度和压力平衡</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">5</div>
+                    <div class="step-content">
+                        <h4>生产运行</h4>
+                        <p>主要的MD模拟</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">6</div>
+                    <div class="step-content">
+                        <h4>轨迹分析</h4>
+                        <p>RMSD、RMSF、回转半径分析</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="advanced-tab" class="tab-content">
+        <div class="card">
+            <h3>高级设置</h3>
+            
+            <div class="form-group">
+                <label>步骤选择</label>
+                <select id="advanced-step">
+                    <option value="prepare">1. 系统准备</option>
+                    <option value="ions">2. 加离子</option>
+                    <option value="em">3. 能量最小化</option>
+                    <option value="equil">4. 平衡</option>
+                    <option value="md">5. 生产运行</option>
+                    <option value="analyze">6. 轨迹分析</option>
+                </select>
+            </div>
+
+            <div id="step-params"></div>
+
+            <button class="btn btn-primary" onclick="runAdvancedStep()">
+                ⚙️ 执行步骤
+            </button>
+        </div>
+
+        <div class="card">
+            <h3>GROMACS状态</h3>
+            <button class="btn btn-secondary" onclick="checkGromacsStatus()">
+                🔍 检查安装状态
+            </button>
+            <div id="gromacs-status" class="status-display"></div>
+        </div>
+    </div>
+
+    <div id="jobs-tab" class="tab-content">
+        <div class="card">
+            <h3>模拟任务列表</h3>
+            <button class="btn btn-secondary" onclick="loadJobs()">
+                🔄 刷新列表
+            </button>
+            <div id="jobs-list" class="jobs-container"></div>
+        </div>
+    </div>
+
+    <div id="results-area" class="results-area">
+        <div class="card">
+            <h3>运行结果</h3>
+            <div id="results-display"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    document.getElementById(tabName + '-tab').classList.add('active');
+    event.target.classList.add('active');
+}
+
+function previewPDB() {
+    const fileInput = document.getElementById('pdb-file');
+    const preview = document.getElementById('pdb-preview');
+    
+    if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        preview.innerHTML = `
+            <div class="file-info">
+                <span class="file-icon">📄</span>
+                <div>
+                    <div class="file-name">${file.name}</div>
+                    <div class="file-size">${(file.size / 1024).toFixed(2)} KB</div>
+                </div>
+            </div>
+        `;
+    }
+}
+
+function runFullWorkflow() {
+    const fileInput = document.getElementById('pdb-file');
+    
+    if (fileInput.files.length === 0) {
+        alert('请选择PDB文件');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    
+    const params = {
+        time_ns: parseFloat(document.getElementById('simulation-time').value),
+        temperature: parseFloat(document.getElementById('temperature').value),
+        pressure: parseFloat(document.getElementById('pressure').value),
+        forcefield: document.getElementById('forcefield').value
+    };
+    
+    Object.keys(params).forEach(key => {
+        formData.append(key, params[key]);
+    });
+    
+    console.log('[WORKFLOW] ===== Starting full workflow =====');
+    showLoading('正在上传PDB文件...');
+    console.log('[DEBUG] Starting PDB upload...');
+    
+    fetch('/api/md/upload-pdb', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        console.log('[DEBUG] Upload response status:', response.status);
+        return response.json();
+    })
+    .then(data => {
+        console.log('[DEBUG] Upload response:', data);
+        if (data.success) {
+            console.log('[WORKFLOW] Upload successful, starting workflow...');
+            showLoading('正在运行完整MD工作流...');
+            console.log('[DEBUG] Starting full workflow...');
+            return fetch('/api/md/full-workflow', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    pdb_file: data.filepath,
+                    time_ns: params.time_ns,
+                    temperature: params.temperature,
+                    pressure: params.pressure
+                })
+            });
+        } else {
+            console.error('[WORKFLOW] Upload failed:', data.error);
+            hideLoading();
+            alert('上传失败: ' + (data.error || '未知错误'));
+            throw new Error(data.error || '上传失败');
+        }
+    })
+    .then(response => {
+        console.log('[DEBUG] Workflow response status:', response.status);
+        return response.json();
+    })
+    .then(data => {
+        console.log('[DEBUG] Workflow response:', data);
+        console.log('[WORKFLOW] About to hide loading and display results...');
+        hideLoading();
+        displayResults(data);
+        console.log('[WORKFLOW] ===== Workflow completed =====');
+    })
+    .catch(error => {
+        console.error('[WORKFLOW] Error caught:', error);
+        console.error('[WORKFLOW] Error stack:', error.stack);
+        hideLoading();
+        alert('错误: ' + error.message);
+    });
+}
+
+function runAdvancedStep() {
+    const step = document.getElementById('advanced-step').value;
+    const fileInput = document.getElementById('pdb-file');
+    
+    if (fileInput.files.length === 0 && step !== 'analyze') {
+        alert('请选择PDB文件');
+        return;
+    }
+    
+    let params = {};
+    
+    if (step === 'prepare') {
+        params = {
+            pdb_file: fileInput.files[0].name,
+            forcefield: document.getElementById('forcefield').value
+        };
+    }
+    
+    showLoading(`正在执行步骤: ${step}...`);
+    
+    fetch(`/api/md/${step}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(params)
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        displayResults(data);
+    })
+    .catch(error => {
+        hideLoading();
+        alert('错误: ' + error.message);
+    });
+}
+
+function checkGromacsStatus() {
+    showLoading('正在检查GROMACS安装状态...');
+    
+    fetch('/api/md/check-installation')
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        const statusDiv = document.getElementById('gromacs-status');
+        
+        if (data.installed) {
+            statusDiv.innerHTML = `
+                <div class="status success">
+                    <span class="status-icon">✅</span>
+                    <div>
+                        <div class="status-title">GROMACS已安装</div>
+                        <div class="status-detail">版本: ${data.version}</div>
+                        <div class="status-detail">路径: ${data.gmx_path}</div>
+                    </div>
+                </div>
+            `;
+        } else {
+            statusDiv.innerHTML = `
+                <div class="status error">
+                    <span class="status-icon">❌</span>
+                    <div>
+                        <div class="status-title">GROMACS未安装</div>
+                        <div class="status-detail">${data.error}</div>
+                        <div class="status-detail">${data.suggestion}</div>
+                    </div>
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('检查失败: ' + error.message);
+    });
+}
+
+function loadJobs() {
+    showLoading('正在加载任务列表...');
+    
+    fetch('/api/md/jobs')
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        displayJobs(data.jobs);
+    })
+    .catch(error => {
+        hideLoading();
+        alert('加载失败: ' + error.message);
+    });
+}
+
+function displayJobs(jobs) {
+    const jobsContainer = document.getElementById('jobs-list');
+    
+    if (!jobs || Object.keys(jobs).length === 0) {
+        jobsContainer.innerHTML = '<p>暂无模拟任务</p>';
+        return;
+    }
+    
+    const jobCards = Object.entries(jobs).map(([jobId, job]) => `
+        <div class="job-card">
+            <div class="job-header">
+                <span class="job-id">任务ID: ${jobId}</span>
+                <span class="job-status ${job.status === 'completed' ? 'success' : 'pending'}">
+                    ${job.status}
+                </span>
+            </div>
+            <div class="job-details">
+                <div><strong>开始时间:</strong> ${job.start_time}</div>
+                <div><strong>模拟时间:</strong> ${job.parameters?.time_ns || 'N/A'} ns</div>
+                <div><strong>温度:</strong> ${job.parameters?.temperature || 'N/A'} K</div>
+                <div><strong>压力:</strong> ${job.parameters?.pressure || 'N/A'} bar</div>
+            </div>
+            ${job.success ? `
+                <div class="job-results">
+                    <div><strong>实际模拟时间:</strong> ${job.steps.find(s => s.name === 'production_md')?.result?.simulation_time_ns || 'N/A'} ns</div>
+                    <div><strong>总帧数:</strong> ${job.steps.find(s => s.name === 'production_md')?.result?.frames || 'N/A'}</div>
+                </div>
+            ` : ''}
+        </div>
+    `).join('');
+    
+    jobsContainer.innerHTML = jobCards;
+}
+
+function displayResults(data) {
+    console.log('[RESULTS] ===== displayResults called =====');
+    console.log('[RESULTS] Data:', data);
+    
+    const resultsDiv = document.getElementById('results-display');
+    const resultsArea = document.getElementById('results-area');
+    
+    console.log('[RESULTS] resultsDiv found:', !!resultsDiv);
+    console.log('[RESULTS] resultsArea found:', !!resultsArea);
+    
+    if (!resultsDiv || !resultsArea) {
+        console.error('[RESULTS] ERROR: Results elements not found:', { resultsDiv, resultsArea });
+        return;
+    }
+    
+    console.log('[RESULTS] Showing results area...');
+    resultsArea.style.display = 'block';
+    console.log('[RESULTS] Results area displayed');
+    
+    if (data.success) {
+        const steps = data.steps || [];
+        
+        let html = '<div class="result-summary">';
+        html += `<h4>✅ 模拟${data.status === 'completed' ? '完成' : '失败'}</h4>`;
+        html += `<p>任务ID: ${data.job_id || 'N/A'}</p>`;
+        html += `<p><strong>总耗时:</strong> ${data.total_time ? data.total_time + ' 秒' : 'N/A'}</p>`;
+        html += '</div>';
+        
+        if (steps.length > 0) {
+            html += '<div class="steps-results">';
+            html += '<h4>步骤执行结果:</h4>';
+            
+            steps.forEach((step, index) => {
+                const stepResult = step.result;
+                const stepStatus = stepResult.success ? 'success' : 'error';
+                
+                html += `
+                    <div class="step-result ${stepStatus}">
+                        <div class="step-header">
+                            <span class="step-title">${index + 1}. ${step.name}</span>
+                            <span class="step-indicator">${stepResult.success ? '✅' : '❌'}</span>
+                        </div>
+                        <div class="step-details">
+                            <div><strong>状态:</strong> ${stepResult.status}</div>
+                            ${stepResult.final_energy ? `<div><strong>最终能量:</strong> ${stepResult.final_energy} kJ/mol</div>` : ''}
+                            ${stepResult.simulation_time_ns ? `<div><strong>模拟时间:</strong> ${stepResult.simulation_time_ns} ns</div>` : ''}
+                            ${stepResult.frames ? `<div><strong>帧数:</strong> ${stepResult.frames}</div>` : ''}
+                            ${stepResult.error ? `<div class="error-msg"><strong>错误:</strong> ${stepResult.error}</div>` : ''}
+                        </div>
+                        ${stepResult.output_files ? `
+                            <div class="output-files">
+                                <strong>输出文件:</strong>
+                                ${Object.entries(stepResult.output_files).map(([key, path]) => `
+                                    <div class="output-file">
+                                        <span class="file-type">${key}:</span>
+                                        <span class="file-path">${path}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+        }
+        
+        if (data.status === 'failed') {
+            html += `
+                <div class="error-summary">
+                    <h4>❌ 模拟失败</h4>
+                    <p><strong>失败步骤:</strong> ${data.failed_at || 'unknown'}</p>
+                </div>
+            `;
+        }
+        
+        console.log('[RESULTS] Setting HTML to resultsDiv...');
+        resultsDiv.innerHTML = html;
+        console.log('[RESULTS] HTML set successfully');
+    } else {
+        console.log('[RESULTS] Displaying error message...');
+        resultsDiv.innerHTML = `
+            <div class="error-summary">
+                <h4>❌ 错误</h4>
+                <p><strong>错误信息:</strong> ${data.error || '未知错误'}</p>
+                <p><strong>失败步骤:</strong> ${data.step || 'unknown'}</p>
+                <p><strong>状态:</strong> ${data.status || 'error'}</p>
+            </div>
+        `;
+        console.log('[RESULTS] Error HTML set successfully');
+    }
+    
+    console.log('[RESULTS] ===== displayResults completed =====');
+}
+
+function showLoading(message) {
+    console.log('[LOADING] showLoading called with message:', message);
+    
+    // 移除旧的loading overlay（如果存在）
+    const existingOverlay = document.querySelector('.loading-overlay');
+    if (existingOverlay) {
+        console.log('[LOADING] Removing existing overlay before creating new one');
+        existingOverlay.remove();
+    }
+    
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.className = 'loading-overlay';
+    loadingOverlay.innerHTML = `
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <div class="loading-message">${message}</div>
+        </div>
+    `;
+    document.body.appendChild(loadingOverlay);
+    console.log('[LOADING] Overlay created and added to body');
+    console.log('[LOADING] Current loading overlays:', document.querySelectorAll('.loading-overlay').length);
+}
+
+function hideLoading() {
+    console.log('[LOADING] hideLoading called');
+    console.log('[LOADING] Current loading overlays before removal:', document.querySelectorAll('.loading-overlay').length);
+    
+    const loadingOverlay = document.querySelector('.loading-overlay');
+    if (loadingOverlay) {
+        loadingOverlay.remove();
+        console.log('[LOADING] Loading overlay removed');
+        console.log('[LOADING] Current loading overlays after removal:', document.querySelectorAll('.loading-overlay').length);
+    } else {
+        console.log('[LOADING] No loading overlay found');
+    }
+}
+
+window.onload = function() {
+    loadJobs();
+};
+</script>
+
+<style>
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.tab-btn {
+    padding: 12px 24px;
+    background: #f0f0f0;
+    border: none;
+    cursor: pointer;
+    border-radius: 8px 8px 0 0;
+    margin-right: 8px;
+    font-size: 14px;
+}
+
+.tab-btn.active {
+    background: #1e3a5f;
+    color: white;
+}
+
+.card {
+    background: white;
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.form-row {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 16px;
+}
+
+.form-group {
+    flex: 1;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #333;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.workflow-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.step {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.step-number {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #1e3a5f;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.step-content h4 {
+    margin: 0 0 8px 0;
+    color: #1e3a5f;
+}
+
+.step-content p {
+    margin: 0;
+    color: #666;
+    font-size: 14px;
+}
+
+.file-preview {
+    margin-top: 12px;
+}
+
+.file-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 6px;
+}
+
+.file-icon {
+    font-size: 24px;
+}
+
+.file-name {
+    font-weight: 600;
+    color: #333;
+}
+
+.file-size {
+    font-size: 12px;
+    color: #666;
+}
+
+.status {
+    padding: 16px;
+    border-radius: 8px;
+    margin-top: 16px;
+}
+
+.status.success {
+    background: #d4edda;
+    border: 1px solid #c3e6cb;
+}
+
+.status.error {
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+}
+
+.status-icon {
+    font-size: 32px;
+    margin-right: 16px;
+}
+
+.status-title {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 8px;
+}
+
+.status-detail {
+    color: #666;
+    font-size: 14px;
+    margin: 4px 0;
+}
+
+.jobs-container {
+    margin-top: 16px;
+}
+
+.job-card {
+    background: #f8f9fa;
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+
+.job-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.job-id {
+    font-weight: 600;
+    color: #333;
+}
+
+.job-status {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.job-status.success {
+    background: #d4edda;
+    color: #155724;
+}
+
+.job-status.pending {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.job-details {
+    font-size: 14px;
+    color: #666;
+}
+
+.job-details div {
+    margin: 4px 0;
+}
+
+.step-result {
+    background: #f8f9fa;
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+
+.step-result.success {
+    border-left: 4px solid #28a745;
+}
+
+.step-result.error {
+    border-left: 4px solid #dc3545;
+}
+
+.step-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.step-title {
+    font-weight: 600;
+    color: #333;
+}
+
+.step-indicator {
+    font-size: 20px;
+}
+
+.step-details {
+    font-size: 14px;
+    color: #666;
+}
+
+.step-details div {
+    margin: 4px 0;
+}
+
+.error-msg {
+    color: #dc3545;
+    font-weight: 600;
+}
+
+.output-files {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #dee2e6;
+}
+
+.output-files strong {
+    display: block;
+    margin-bottom: 8px;
+}
+
+.output-file {
+    display: flex;
+    gap: 8px;
+    font-size: 13px;
+    color: #666;
+    margin: 4px 0;
+}
+
+.file-type {
+    font-weight: 600;
+    min-width: 80px;
+}
+
+.file-path {
+    font-family: monospace;
+    font-size: 12px;
+    color: #495057;
+}
+
+.result-summary {
+    padding: 16px;
+    background: #d4edda;
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+
+.error-summary {
+    padding: 16px;
+    background: #f8d7da;
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.loading-content {
+    background: white;
+    padding: 32px;
+    border-radius: 12px;
+    text-align: center;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #1e3a5f;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 16px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-message {
+    color: #333;
+    font-size: 16px;
+}
+
+.results-area {
+    margin-top: 24px;
+}
+
+.results-display h4 {
+    margin: 0 0 12px 0;
+    color: #333;
+}
+
+.btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-primary {
+    background: #1e3a5f;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #2c4a6f;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+}
+</style>
+{% endblock %}

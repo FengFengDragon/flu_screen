@@ -1,0 +1,1335 @@
+{% extends "base.html" %}
+
+{% block title %}虚拟筛选{% endblock %}
+
+{% block extra_css %}
+<style>
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+.stat-card { background: #f8f9fa; border-radius: 8px; padding: 16px; text-align: center; }
+.stat-card .value { font-size: 2rem; font-weight: bold; color: #2c7be5; }
+.stat-card .label { font-size: 0.85rem; color: #6c757d; margin-top: 4px; }
+.molecule-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.molecule-table th { background: #2c7be5; color: white; padding: 10px 12px; text-align: left; }
+.molecule-table td { padding: 9px 12px; border-bottom: 1px solid #e9ecef; }
+.molecule-table tr:hover td { background: #f0f4ff; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem; font-weight: 600; }
+.badge-pass { background: #d4edda; color: #155724; }
+.badge-fail { background: #f8d7da; color: #721c24; }
+.badge-warn { background: #fff3cd; color: #856404; }
+.progress-bar { height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden; margin-top: 6px; }
+.progress-fill { height: 100%; background: #2c7be5; border-radius: 4px; transition: width 0.4s; }
+.smiles-input { font-family: monospace; font-size: 0.85rem; }
+.tier-badge-1 { background: #cce5ff; color: #004085; }
+.tier-badge-2 { background: #d4edda; color: #155724; }
+.tier-badge-3 { background: #fff3cd; color: #856404; }
+.viewer-container { position: relative; border: 2px solid #dee2e6; border-radius: 8px; overflow: hidden; background: #000; }
+.viewer-toolbar { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; }
+.viewer-toolbar .btn { font-size: 0.82rem; padding: 5px 12px; }
+.viewer-info { padding: 10px; background: #f8f9fa; border-top: 1px solid #dee2e6; font-size: 0.85rem; color: #495057; min-height: 40px; }
+.spin-btn.active { background: #28a745 !important; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="header" style="background: linear-gradient(135deg,#1a3a5c,#2c7be5); color:white; padding:24px; border-radius:10px; margin-bottom:24px;">
+    <h1>🔬 虚拟筛选</h1>
+    <p>小分子预处理 → Lipinski / ADMET / PAINS 过滤 → 分级对接</p>
+</div>
+
+<div class="tabs">
+    <button class="tab-btn active" onclick="showTab('preprocess')">预处理</button>
+    <button class="tab-btn" onclick="showTab('screen')">完整筛选</button>
+    <button class="tab-btn" onclick="showTab('single')">单分子分析</button>
+    <button class="tab-btn" onclick="showTab('results')">筛选结果</button>
+    <button class="tab-btn" onclick="showTab('viewer3d')">3D可视化</button>
+</div>
+
+<!-- 预处理 Tab -->
+<div id="preprocess-tab" class="tab-content active">
+    <div class="card">
+        <h3>批量分子预处理</h3>
+        
+        <div class="form-group" style="margin-bottom: 16px; padding: 16px; background: #f8f9fa; border-radius: 8px; border: 2px dashed #dee2e6;">
+            <label style="font-weight: 600; margin-bottom: 8px; display: block;">📁 上传文件（.txt, .smi, .csv）</label>
+            <p style="color: #6c757d; font-size: 0.85rem; margin-bottom: 12px;">
+                支持包含SMILES和FASTA格式的文件，自动解析蛋白质序列和小分子
+            </p>
+            <input type="file" id="preprocess-file" accept=".txt,.smi,.csv" style="margin-bottom: 8px;">
+            <button class="btn btn-secondary" onclick="parseUploadFile()">📤 解析文件</button>
+            <span id="file-parse-result" style="margin-left: 12px; font-size: 0.85rem;"></span>
+        </div>
+
+        <!-- 蛋白质选择器 -->
+        <div id="protein-selector" class="form-group" style="display:none;">
+            <label>🧬 蛋白质序列选择</label>
+            <p style="color: #6c757d; font-size: 0.85rem; margin-bottom: 12px;">
+                选择要进行分析的蛋白质序列
+            </p>
+            <div id="protein-options" style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 6px; padding: 10px;">
+            </div>
+            <div style="margin-top: 10px; font-size: 0.85rem;">
+                <span id="selected-protein-info" style="color: #2c7be5;">未选择蛋白质</span>
+            </div>
+        </div>
+
+        <!-- SMILES选择器 -->
+        <div id="smiles-selector" class="form-group" style="display:none;">
+            <label>💊 小分子列表（点击选择）</label>
+            <p style="color: #6c757d; font-size: 0.85rem; margin-bottom: 12px;">
+                点击某个分子选中它，对应的 SMILES 会自动填入下方文本框
+            </p>
+            <div id="smiles-options" style="border: 1px solid #dee2e6; border-radius: 6px; padding: 10px;">
+            </div>
+            <div style="margin-top: 10px; font-size: 0.85rem;">
+                <span id="selected-smiles-info" style="color: #2c7be5;">未选中任何分子</span>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>SMILES 列表（每行一个）</label>
+            <textarea id="preprocess-smiles" class="smiles-input" rows="8"
+                placeholder="CC(=O)Oc1ccccc1C(=O)O&#10;c1ccc(cc1)C(=O)O&#10;CC(C)Cc1ccc(cc1)C(C)C(=O)O"></textarea>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label><input type="checkbox" id="filter-lipinski" checked> Lipinski 五规则</label>
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="filter-admet" checked> ADMET 过滤</label>
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="filter-pains" checked> PAINS 过滤</label>
+            </div>
+        </div>
+        <button class="btn btn-primary" onclick="runPreprocess()">🚀 开始预处理</button>
+    </div>
+
+    <div id="preprocess-result" style="display:none;">
+        <div class="stats-grid" id="preprocess-stats"></div>
+        <div class="card">
+            <h3>预处理详情</h3>
+            <div id="preprocess-table-wrap"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 完整筛选 Tab -->
+<div id="screen-tab" class="tab-content">
+    <div class="card">
+        <h3>完整虚拟筛选流程</h3>
+        
+        <div class="form-group" style="margin-bottom: 16px; padding: 16px; background: #f8f9fa; border-radius: 8px; border: 2px dashed #dee2e6;">
+            <label style="font-weight: 600; margin-bottom: 8px; display: block;">📁 上传文件并直接筛选</label>
+            <p style="color: #6c757d; font-size: 0.85rem; margin-bottom: 12px;">
+                上传包含SMILES的文件，自动进行预处理和分级对接
+            </p>
+            <input type="file" id="screen-file" accept=".txt,.smi,.csv" style="margin-bottom: 8px;">
+            <button class="btn btn-primary" onclick="uploadAndScreen()">📤 上传并筛选</button>
+            <span id="screen-file-status" style="margin-left: 12px; font-size: 0.85rem;"></span>
+        </div>
+        
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #dee2e6;">
+        
+        <div class="form-group">
+            <label>SMILES 列表（每行一个）</label>
+            <textarea id="screen-smiles" class="smiles-input" rows="8"
+                placeholder="输入待筛选的小分子 SMILES..."></textarea>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Tier1 保留数量</label>
+                <input type="number" id="tier1-count" value="500" min="10">
+            </div>
+            <div class="form-group">
+                <label>Tier2 保留数量</label>
+                <input type="number" id="tier2-count" value="100" min="5">
+            </div>
+            <div class="form-group">
+                <label>Tier3 保留数量</label>
+                <input type="number" id="tier3-count" value="20" min="1">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>靶蛋白 PDB（可选，留空则使用RDKit评分）</label>
+            <div style="display:flex;gap:6px;">
+                <select id="screen-target-select" style="flex:1;padding:6px;">
+                    <option value="">-- 不使用Vina对接 --</option>
+                </select>
+                <button class="btn btn-secondary" onclick="loadPdbFiles()" title="刷新蛋白列表" style="padding:6px 12px;white-space:nowrap;">刷新</button>
+            </div>
+            <div id="pdb-load-status" style="font-size:0.8rem;color:#999;margin-top:4px;"></div>
+        </div>
+        <div id="vina-box-settings" style="display:none;margin-top:8px;padding:10px;background:#f0f4f8;border-radius:6px;">
+            <div style="font-size:0.85rem;margin-bottom:6px;color:#555;">对接盒子设置（留空则自动从结合位点计算）</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+                <div class="form-group" style="margin:0;">
+                    <label style="font-size:0.8rem;">Center X</label>
+                    <input type="number" id="box-cx" placeholder="auto" step="0.1" style="width:100%;padding:4px;">
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label style="font-size:0.8rem;">Center Y</label>
+                    <input type="number" id="box-cy" placeholder="auto" step="0.1" style="width:100%;padding:4px;">
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label style="font-size:0.8rem;">Center Z</label>
+                    <input type="number" id="box-cz" placeholder="auto" step="0.1" style="width:100%;padding:4px;">
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px;">
+                <div class="form-group" style="margin:0;">
+                    <label style="font-size:0.8rem;">Size X</label>
+                    <input type="number" id="box-sx" placeholder="auto" step="1" style="width:100%;padding:4px;">
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label style="font-size:0.8rem;">Size Y</label>
+                    <input type="number" id="box-sy" placeholder="auto" step="1" style="width:100%;padding:4px;">
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label style="font-size:0.8rem;">Size Z</label>
+                    <input type="number" id="box-sz" placeholder="auto" step="1" style="width:100%;padding:4px;">
+                </div>
+            </div>
+        </div>
+        <button class="btn btn-primary" onclick="runScreen()">⚡ 开始筛选</button>
+    </div>
+
+    <div id="screen-progress" class="card" style="display:none;">
+        <h3>⏳ 筛选进度</h3>
+        <div style="background:#e9ecef;border-radius:10px;height:24px;overflow:hidden;margin:10px 0;position:relative;">
+            <div id="screen-progress-bar" style="background:linear-gradient(90deg,#2c7be5,#00d97e);height:100%;width:0%;transition:width 0.3s;border-radius:10px;"></div>
+            <span id="screen-progress-pct" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:0.8rem;font-weight:600;color:#333;">0%</span>
+        </div>
+        <div id="screen-progress-log" style="max-height:200px;overflow-y:auto;font-size:0.82rem;color:#495057;background:#f8f9fa;padding:10px;border-radius:6px;font-family:monospace;white-space:pre-wrap;"></div>
+    </div>
+
+    <div id="screen-result" style="display:none;">
+        <div class="stats-grid" id="screen-stats"></div>
+        <div class="card">
+            <h3>Top 候选分子（Tier3）</h3>
+            <div id="screen-table-wrap"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 单分子分析 Tab -->
+<div id="single-tab" class="tab-content">
+    <div class="card">
+        <h3>单分子详细分析</h3>
+        <div class="form-group">
+            <label>SMILES</label>
+            <input type="text" id="single-smiles" class="smiles-input"
+                placeholder="CC(=O)Oc1ccccc1C(=O)O">
+        </div>
+        <div class="form-row">
+            <button class="btn btn-primary" onclick="runSingleDescriptors()">📊 描述符</button>
+            <button class="btn btn-secondary" onclick="runSingleLipinski()">💊 Lipinski</button>
+            <button class="btn btn-secondary" onclick="runSingleAdmet()">🧬 ADMET</button>
+            <button class="btn btn-secondary" onclick="runSinglePains()">⚠️ PAINS</button>
+            <button class="btn btn-secondary" onclick="runBindingEnergy()">⚡ 结合能</button>
+            <button class="btn btn-secondary" onclick="runBindingMode()">🔗 结合模式</button>
+            <button class="btn btn-secondary" onclick="runConformer()">🧊 3D构象</button>
+        </div>
+    </div>
+    <div class="card" id="single-result" style="display:none;">
+        <h3 id="single-result-title">结果</h3>
+        <pre id="single-result-content" style="background:#f8f9fa;padding:16px;border-radius:6px;overflow:auto;max-height:500px;font-size:0.85rem;"></pre>
+    </div>
+</div>
+
+<!-- 结果 Tab -->
+<div id="results-tab" class="tab-content">
+    <div class="card">
+        <h3>筛选结果汇总</h3>
+        <p id="results-placeholder" style="color:#6c757d;">请先在「完整筛选」或「预处理」标签页运行分析。</p>
+        <div id="results-content" style="display:none;">
+            <div class="stats-grid" id="results-stats"></div>
+            <div id="results-table-wrap"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 3D可视化 Tab -->
+<div id="viewer3d-tab" class="tab-content">
+    <div class="card">
+        <h3>三维分子可视化</h3>
+        <p style="color:#6c757d;margin-bottom:16px;">加载蛋白结构、查看结合位点、执行单分子对接并查看结合姿态。</p>
+        <div class="form-row" style="margin-bottom:12px;">
+            <div class="form-group" style="flex:1;">
+                <label>靶标蛋白</label>
+                <select id="viewer3d-target" style="width:100%;padding:6px;">
+                    <option value="">-- 选择蛋白 --</option>
+                </select>
+            </div>
+            <div class="form-group" style="flex:1;">
+                <label>配体 SMILES（可选，对接后查看姿态）</label>
+                <input type="text" id="viewer3d-smiles" placeholder="CC(=O)Oc1ccccc1C(=O)O" style="width:100%;padding:6px;font-family:monospace;">
+            </div>
+        </div>
+        <div class="viewer-toolbar">
+            <button class="btn btn-primary" onclick="v3dLoadProtein()">加载蛋白</button>
+            <button class="btn btn-secondary" onclick="v3dPredictSites()">预测结合位点</button>
+            <button class="btn btn-secondary" onclick="v3dDockLigand()">执行对接</button>
+            <button class="btn btn-secondary" onclick="v3dClearLigand()">清除配体</button>
+            <button class="btn btn-secondary spin-btn" id="v3d-spin-btn" onclick="v3dToggleSpin()">旋转</button>
+            <button class="btn btn-secondary" onclick="v3dResetView()">重置视角</button>
+            <div style="flex:1;"></div>
+            <div style="display:flex;gap:6px;align-items:center;">
+                <label style="font-size:0.82rem;margin:0;">显示方式:</label>
+                <select id="v3d-style" style="padding:4px;font-size:0.82rem;" onchange="v3dChangeStyle()">
+                    <option value="cartoon">Cartoon</option>
+                    <option value="stick">Stick</option>
+                    <option value="sphere">Sphere</option>
+                    <option value="line">Line</option>
+                    <option value="cross">Cross</option>
+                </select>
+                <label style="font-size:0.82rem;margin:0;">着色:</label>
+                <select id="v3d-color" style="padding:4px;font-size:0.82rem;" onchange="v3dChangeStyle()">
+                    <option value="spectrum">Spectrum</option>
+                    <option value="chain">Chain</option>
+                    <option value="ss">二级结构</option>
+                    <option value="residue">残基</option>
+                    <option value="white">白色</option>
+                </select>
+            </div>
+        </div>
+        <div class="viewer-container">
+            <div id="v3d-viewer" style="width:100%;height:520px;"></div>
+        </div>
+        <div class="viewer-info" id="v3d-info">尚未加载任何结构。选择蛋白后点击「加载蛋白」。</div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const API = '/api/virtual-screening';
+let lastScreenResult = null;
+let allProteins = [];
+let allSmiles = [];
+let selectedProteinIndex = -1;
+let selectedSmilesIndex = -1;
+const SMILES_PAGE_SIZE = 5;
+let smilesCurrentPage = 0;
+
+let sessionTotalScreened = 0;
+let sessionTotalPassed = 0;
+let sessionAllCandidates = [];
+let sessionRunCount = 0;
+
+function showTab(name) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById(name + '-tab').classList.add('active');
+    const btns = document.querySelectorAll('.tab-btn');
+    const tabMap = {'preprocess':0,'screen':1,'single':2,'results':3,'viewer3d':4};
+    if (tabMap[name] !== undefined && btns[tabMap[name]]) {
+        btns[tabMap[name]].classList.add('active');
+    }
+}
+
+function getSmilesLines(id) {
+    return document.getElementById(id).value
+        .split('\n').map(s => s.trim()).filter(s => s.length > 0);
+}
+
+function statCard(value, label, color) {
+    return `<div class="stat-card"><div class="value" style="color:${color||'#2c7be5'}">${value}</div><div class="label">${label}</div></div>`;
+}
+
+function badge(pass, trueLabel, falseLabel) {
+    return pass
+        ? `<span class="badge badge-pass">${trueLabel||'通过'}</span>`
+        : `<span class="badge badge-fail">${falseLabel||'未通过'}</span>`;
+}
+
+async function post(url, body) {
+    const r = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    });
+    return r.json();
+}
+
+async function postFile(url, formData) {
+    const r = await fetch(url, {
+        method: 'POST',
+        body: formData
+    });
+    return r.json();
+}
+
+// ── 文件上传解析 ───────────────────────────────────────
+async function parseUploadFile() {
+    const fileInput = document.getElementById('preprocess-file');
+    if (!fileInput.files.length) { alert('请选择文件'); return; }
+    
+    const file = fileInput.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const resultSpan = document.getElementById('file-parse-result');
+    resultSpan.textContent = '解析中...';
+    resultSpan.style.color = '#2c7be5';
+    
+    try {
+        const data = await postFile(`${API}/upload-parse`, formData);
+        
+        if (!data.success) {
+            resultSpan.textContent = '❌ ' + data.error;
+            resultSpan.style.color = '#dc3545';
+            return;
+        }
+        
+        resultSpan.innerHTML = `✅ 找到 ${data.stats.total_smiles} 个小分子, ${data.stats.total_proteins} 个蛋白质`;
+        resultSpan.style.color = '#28a745';
+        
+        if (data.proteins && data.proteins.length > 0) {
+            showProteinSelector(data.proteins);
+        }
+        
+        if (data.smiles_list && data.smiles_list.length > 0) {
+            showSmilesSelector(data.smiles_list);
+        } else {
+            document.getElementById('protein-selector').style.display = 'none';
+            document.getElementById('smiles-selector').style.display = 'none';
+        }
+        
+        if (data.errors.length > 0) {
+            console.warn('解析警告:', data.errors);
+        }
+        
+    } catch (e) {
+        resultSpan.textContent = '❌ 解析失败: ' + e.message;
+        resultSpan.style.color = '#dc3545';
+    }
+}
+
+// ── 文件上传并筛选 ─────────────────────────────────────
+async function uploadAndScreen() {
+    const fileInput = document.getElementById('screen-file');
+    if (!fileInput.files.length) { alert('请选择文件'); return; }
+    
+    const file = fileInput.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const statusSpan = document.getElementById('screen-file-status');
+    const btn = event.target;
+    const originalText = btn.textContent;
+    
+    btn.textContent = '解析中...';
+    btn.disabled = true;
+    statusSpan.textContent = '正在解析文件...';
+    statusSpan.style.color = '#2c7be5';
+    
+    const progressDiv = document.getElementById('screen-progress');
+    const progressBar = document.getElementById('screen-progress-bar');
+    const progressPct = document.getElementById('screen-progress-pct');
+    const progressLog = document.getElementById('screen-progress-log');
+    progressDiv.style.display = 'block';
+    progressBar.style.width = '0%';
+    progressPct.textContent = '0%';
+    progressLog.textContent = '';
+    document.getElementById('screen-result').style.display = 'none';
+    
+    function logProgress(msg) {
+        const t = new Date().toLocaleTimeString();
+        progressLog.textContent += `[${t}] ${msg}\n`;
+        progressLog.scrollTop = progressLog.scrollHeight;
+    }
+    
+    try {
+        const parseData = await postFile(`${API}/upload-parse`, formData);
+        
+        if (!parseData.success) {
+            statusSpan.textContent = '❌ ' + parseData.error;
+            statusSpan.style.color = '#dc3545';
+            btn.textContent = originalText;
+            btn.disabled = false;
+            return;
+        }
+        
+        statusSpan.innerHTML = `✅ 找到 ${parseData.stats.total_smiles} 个小分子, ${parseData.stats.total_proteins} 个蛋白质`;
+        statusSpan.style.color = '#28a745';
+        
+        if (parseData.proteins && parseData.proteins.length > 0) {
+            showProteinSelector(parseData.proteins);
+        }
+        
+        if (!parseData.smiles_list || parseData.smiles_list.length === 0) {
+            logProgress('⚠️ 未找到有效的小分子SMILES');
+            btn.textContent = originalText;
+            btn.disabled = false;
+            return;
+        }
+        
+        showSmilesSelector(parseData.smiles_list);
+        
+        btn.textContent = '筛选中...';
+        logProgress(`解析完成，开始筛选 ${parseData.smiles_list.length} 个分子...`);
+        
+        const selectedSmiles = parseData.smiles_list;
+        const targetPdb = document.getElementById('screen-target-select').value || null;
+        const body = {
+            smiles_list: selectedSmiles,
+            tier1_count: +document.getElementById('tier1-count').value,
+            tier2_count: +document.getElementById('tier2-count').value,
+            tier3_count: +document.getElementById('tier3-count').value,
+            target_pdb: targetPdb,
+        };
+        if (targetPdb) {
+            const cx = parseFloat(document.getElementById('box-cx').value);
+            const cy = parseFloat(document.getElementById('box-cy').value);
+            const cz = parseFloat(document.getElementById('box-cz').value);
+            const sx = parseFloat(document.getElementById('box-sx').value);
+            const sy = parseFloat(document.getElementById('box-sy').value);
+            const sz = parseFloat(document.getElementById('box-sz').value);
+            if (!isNaN(cx) && !isNaN(cy) && !isNaN(cz)) {
+                body.center = [cx, cy, cz];
+            }
+            if (!isNaN(sx) && !isNaN(sy) && !isNaN(sz)) {
+                body.box_size = [sx, sy, sz];
+            }
+        }
+        
+        const response = await fetch(`${API}/screen-stream`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        
+        if (!response.ok) {
+            const errData = await response.json();
+            logProgress('❌ 错误: ' + (errData.error || '请求失败'));
+            return;
+        }
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, {stream: true});
+            const events = buffer.split('\n\n');
+            buffer = events.pop();
+            
+            for (const evt of events) {
+                const lines = evt.split('\n');
+                let eventType = '';
+                let eventData = '';
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) eventType = line.slice(7);
+                    if (line.startsWith('data: ')) eventData = line.slice(6);
+                }
+                if (!eventType || !eventData) continue;
+                
+                const d = JSON.parse(eventData);
+                
+                if (eventType === 'progress') {
+                    progressBar.style.width = d.pct + '%';
+                    progressPct.textContent = d.pct + '%';
+                    logProgress(d.msg);
+                } else if (eventType === 'error') {
+                    logProgress('❌ ' + d.msg);
+                    if (d.preprocess_stats) {
+                        logProgress(`预处理结果: ${d.preprocess_stats.passed}/${d.preprocess_stats.total} 通过`);
+                    }
+                } else if (eventType === 'result') {
+                    progressBar.style.width = '100%';
+                    progressPct.textContent = '100%';
+                    logProgress('✅ 筛选完成！');
+                    lastScreenResult = d;
+                    renderScreenResult(d);
+                    renderResultsTab(d);
+                }
+            }
+        }
+        
+        btn.textContent = originalText;
+        btn.disabled = false;
+        
+    } catch (e) {
+        logProgress('❌ 处理失败: ' + e.message);
+        statusSpan.textContent = '❌ 处理失败';
+        statusSpan.style.color = '#dc3545';
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
+// ── 预处理 ──────────────────────────────────────────
+async function runPreprocess() {
+    let smiles_list = getSelectedSmiles();
+    if (!smiles_list.length) {
+        smiles_list = getSmilesLines('preprocess-smiles');
+    }
+    if (!smiles_list.length) { alert('请上传文件或输入 SMILES'); return; }
+    const filters = {
+        lipinski: document.getElementById('filter-lipinski').checked,
+        admet:    document.getElementById('filter-admet').checked,
+        pains:    document.getElementById('filter-pains').checked,
+    };
+    const btn = event.target;
+    btn.textContent = '处理中...'; btn.disabled = true;
+    try {
+        const data = await post(`${API}/preprocess`, {smiles_list, filters});
+        renderPreprocessResult(data);
+    } finally { btn.textContent = '🚀 开始预处理'; btn.disabled = false; }
+}
+
+function renderPreprocessResult(data) {
+    if (!data.success) { alert(data.error); return; }
+    const s = data.stats;
+    document.getElementById('preprocess-stats').innerHTML =
+        statCard(s.total, '输入分子') +
+        statCard(s.invalid_smiles, '无效SMILES', '#dc3545') +
+        statCard(s.total - s.invalid_smiles - s.lipinski_failed - s.admet_failed - s.pains_failed, '过滤淘汰', '#fd7e14') +
+        statCard(s.passed, '通过', '#28a745');
+
+    const rows = data.all_results.map(m => {
+        const lip = m.filters.lipinski;
+        const adm = m.filters.admet;
+        const pai = m.filters.pains;
+        return `<tr>
+            <td style="font-family:monospace;font-size:0.8rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${m.smiles}">${m.smiles}</td>
+            <td>${lip ? badge(lip.pass) : '-'}</td>
+            <td>${adm ? badge(adm.pass) : '-'}</td>
+            <td>${pai ? badge(pai.pass) : '-'}</td>
+            <td>${badge(m.passed, '✓ 通过', '✗ 淘汰')}</td>
+            <td>${m.descriptors ? m.descriptors.molecular_weight : '-'}</td>
+            <td>${m.descriptors ? m.descriptors.logp : '-'}</td>
+            <td>${m.descriptors ? m.descriptors.qed : '-'}</td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('preprocess-table-wrap').innerHTML = `
+        <table class="molecule-table">
+            <thead><tr><th>SMILES</th><th>Lipinski</th><th>ADMET</th><th>PAINS</th><th>结果</th><th>MW</th><th>LogP</th><th>QED</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+    document.getElementById('preprocess-result').style.display = 'block';
+}
+
+// ── 完整筛选 ─────────────────────────────────────────
+async function runScreen() {
+    let smiles_list = getSelectedSmiles();
+    if (!smiles_list.length) {
+        smiles_list = getSmilesLines('screen-smiles');
+    }
+    if (!smiles_list.length) { alert('请上传文件或输入 SMILES'); return; }
+    const selectedProtein = getSelectedProtein();
+    const targetPdb = document.getElementById('screen-target-select').value || null;
+    const body = {
+        smiles_list,
+        tier1_count: +document.getElementById('tier1-count').value,
+        tier2_count: +document.getElementById('tier2-count').value,
+        tier3_count: +document.getElementById('tier3-count').value,
+        target_pdb:  targetPdb,
+        protein_id: selectedProtein ? selectedProtein.id : null,
+    };
+    if (targetPdb) {
+        const cx = parseFloat(document.getElementById('box-cx').value);
+        const cy = parseFloat(document.getElementById('box-cy').value);
+        const cz = parseFloat(document.getElementById('box-cz').value);
+        const sx = parseFloat(document.getElementById('box-sx').value);
+        const sy = parseFloat(document.getElementById('box-sy').value);
+        const sz = parseFloat(document.getElementById('box-sz').value);
+        if (!isNaN(cx) && !isNaN(cy) && !isNaN(cz)) {
+            body.center = [cx, cy, cz];
+        }
+        if (!isNaN(sx) && !isNaN(sy) && !isNaN(sz)) {
+            body.box_size = [sx, sy, sz];
+        }
+    }
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.textContent = '筛选中...'; btn.disabled = true;
+
+    const progressDiv = document.getElementById('screen-progress');
+    const progressBar = document.getElementById('screen-progress-bar');
+    const progressPct = document.getElementById('screen-progress-pct');
+    const progressLog = document.getElementById('screen-progress-log');
+    progressDiv.style.display = 'block';
+    progressBar.style.width = '0%';
+    progressPct.textContent = '0%';
+    progressLog.textContent = '';
+    document.getElementById('screen-result').style.display = 'none';
+
+    function logProgress(msg) {
+        const time = new Date().toLocaleTimeString();
+        progressLog.textContent += `[${time}] ${msg}\n`;
+        progressLog.scrollTop = progressLog.scrollHeight;
+    }
+
+    try {
+        const response = await fetch(`${API}/screen-stream`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+            const errData = await response.json();
+            logProgress('❌ 错误: ' + (errData.error || '请求失败'));
+            return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, {stream: true});
+            const events = buffer.split('\n\n');
+            buffer = events.pop();
+
+            for (const evt of events) {
+                const lines = evt.split('\n');
+                let eventType = '';
+                let eventData = '';
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) eventType = line.slice(7);
+                    if (line.startsWith('data: ')) eventData = line.slice(6);
+                }
+                if (!eventType || !eventData) continue;
+
+                const d = JSON.parse(eventData);
+
+                if (eventType === 'progress') {
+                    progressBar.style.width = d.pct + '%';
+                    progressPct.textContent = d.pct + '%';
+                    logProgress(d.msg);
+                } else if (eventType === 'error') {
+                    logProgress('❌ ' + d.msg);
+                    if (d.preprocess_stats) {
+                        logProgress(`预处理结果: ${d.preprocess_stats.passed}/${d.preprocess_stats.total} 通过`);
+                    }
+                } else if (eventType === 'result') {
+                    progressBar.style.width = '100%';
+                    progressPct.textContent = '100%';
+                    logProgress('✅ 筛选完成！');
+                    lastScreenResult = d;
+                    renderScreenResult(d);
+                    renderResultsTab(d);
+                }
+            }
+        }
+    } catch (e) {
+        logProgress('❌ 请求异常: ' + e.message);
+    } finally {
+        btn.textContent = originalText; btn.disabled = false;
+    }
+}
+
+function renderScreenResult(data) {
+    if (!data.success) { alert(data.error); return; }
+    const s = data.preprocess_stats;
+    const d = data.docking.summary;
+
+    sessionRunCount++;
+    sessionTotalScreened += s.total;
+    sessionTotalPassed += s.passed;
+    const newCandidates = (data.top_candidates || []).map(c => ({
+        ...c,
+        run: sessionRunCount
+    }));
+    sessionAllCandidates = [...newCandidates, ...sessionAllCandidates];
+
+    const allScores = sessionAllCandidates.map(c => c.docking_score).filter(s => s != null);
+    let bestScore = null;
+    if (allScores.length > 0) {
+        const isVina = data.docking && data.docking.use_vina;
+        bestScore = isVina ? Math.min(...allScores) : Math.max(...allScores);
+    }
+
+    document.getElementById('screen-stats').innerHTML =
+        statCard(sessionTotalScreened, '累计分析分子') +
+        statCard(sessionTotalPassed, '累计通过', '#28a745') +
+        statCard(sessionRunCount, '筛选轮次', '#fd7e14') +
+        statCard(bestScore ? bestScore.toFixed(2) : '-', '最佳分数', '#2c7be5') +
+        (data.docking.use_vina ? statCard('Vina', '对接方法', '#6f42c1') : '');
+
+    const rows = sessionAllCandidates.map((c, i) => `<tr>
+        <td>${i+1}</td>
+        <td style="font-family:monospace;font-size:0.8rem">${c.smiles}</td>
+        <td>${c.docking_score ? c.docking_score.toFixed(3) : '-'}</td>
+        <td>${c.mmgbsa_energy ? c.mmgbsa_energy.toFixed(2) : '-'}</td>
+        <td>${c.binding_affinity_kd ? c.binding_affinity_kd : '-'}</td>
+        <td>${c.confidence ? `<span class="badge ${c.confidence==='high'?'badge-pass':'badge-warn'}">${c.confidence}</span>` : '-'}</td>
+        <td><span class="badge tier-badge-3">#${c.run || '-'}</span></td>
+    </tr>`).join('');
+
+    document.getElementById('screen-table-wrap').innerHTML = `
+        <table class="molecule-table">
+            <thead><tr><th>#</th><th>SMILES</th><th>对接分数</th><th>MM-GBSA (kcal/mol)</th><th>Kd (μM)</th><th>置信度</th><th>轮次</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+    document.getElementById('screen-result').style.display = 'block';
+}
+
+function renderResultsTab(data) {
+    document.getElementById('results-placeholder').style.display = 'none';
+    document.getElementById('results-content').style.display = 'block';
+    const s = data.preprocess_stats;
+    const d = data.docking.summary;
+
+    const allTierEntries = [
+        ...(data.docking.tier1?.compounds||[]).map(c=>({...c,tier:1})),
+        ...(data.docking.tier2?.compounds||[]).map(c=>({...c,tier:2})),
+        ...(data.docking.tier3?.compounds||[]).map(c=>({...c,tier:3})),
+    ];
+
+    document.getElementById('results-stats').innerHTML =
+        statCard(sessionTotalScreened, '累计分析') +
+        statCard(sessionTotalPassed, '累计通过', '#28a745') +
+        statCard(sessionRunCount, '筛选轮次', '#fd7e14') +
+        statCard(d.best_score ? d.best_score.toFixed(2) : '-', '本轮最佳', '#2c7be5');
+
+    const rows = allTierEntries.slice(0,50).map((c,i) => `<tr>
+        <td>${i+1}</td>
+        <td style="font-family:monospace;font-size:0.8rem">${c.smiles}</td>
+        <td><span class="badge tier-badge-${c.tier}">Tier ${c.tier}</span></td>
+        <td>${c.docking_score ? c.docking_score.toFixed(3) : '-'}</td>
+        <td>${c.mmgbsa_energy ? c.mmgbsa_energy.toFixed(2) : '-'}</td>
+    </tr>`).join('');
+
+    document.getElementById('results-table-wrap').innerHTML = `
+        <table class="molecule-table">
+            <thead><tr><th>#</th><th>SMILES</th><th>层级</th><th>对接分数</th><th>MM-GBSA</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+}
+
+// ── 单分子分析 ────────────────────────────────────────
+function showSingleResult(title, data) {
+    document.getElementById('single-result-title').textContent = title;
+    document.getElementById('single-result-content').textContent = JSON.stringify(data, null, 2);
+    document.getElementById('single-result').style.display = 'block';
+}
+
+async function runSingleDescriptors() {
+    const smiles = document.getElementById('single-smiles').value.trim();
+    if (!smiles) { alert('请输入 SMILES'); return; }
+    showSingleResult('描述符', await post(`${API}/descriptors`, {smiles}));
+}
+async function runSingleLipinski() {
+    const smiles = document.getElementById('single-smiles').value.trim();
+    if (!smiles) { alert('请输入 SMILES'); return; }
+    showSingleResult('Lipinski 过滤', await post(`${API}/filter/lipinski`, {smiles_list:[smiles]}));
+}
+async function runSingleAdmet() {
+    const smiles = document.getElementById('single-smiles').value.trim();
+    if (!smiles) { alert('请输入 SMILES'); return; }
+    showSingleResult('ADMET 过滤', await post(`${API}/filter/admet`, {smiles_list:[smiles]}));
+}
+async function runSinglePains() {
+    const smiles = document.getElementById('single-smiles').value.trim();
+    if (!smiles) { alert('请输入 SMILES'); return; }
+    showSingleResult('PAINS 过滤', await post(`${API}/filter/pains`, {smiles_list:[smiles]}));
+}
+async function runBindingEnergy() {
+    const smiles = document.getElementById('single-smiles').value.trim();
+    if (!smiles) { alert('请输入 SMILES'); return; }
+    showSingleResult('结合自由能', await post(`${API}/binding-energy`, {smiles}));
+}
+async function runBindingMode() {
+    const smiles = document.getElementById('single-smiles').value.trim();
+    if (!smiles) { alert('请输入 SMILES'); return; }
+    showSingleResult('结合模式分析', await post(`${API}/binding-mode`, {smiles}));
+}
+async function runConformer() {
+    const smiles = document.getElementById('single-smiles').value.trim();
+    if (!smiles) { alert('请输入 SMILES'); return; }
+    showSingleResult('3D 构象', await post(`${API}/conformer`, {smiles}));
+}
+
+function showProteinSelector(proteins) {
+    allProteins = proteins;
+    selectedProteinIndex = 0;
+    const container = document.getElementById('protein-options');
+    const selector = document.getElementById('protein-selector');
+    
+    let html = '';
+    proteins.forEach((p, i) => {
+        const displayName = p.id.length > 60 ? p.id.substring(0, 60) + '...' : p.id;
+        const checked = i === 0 ? 'checked' : '';
+        html += `
+        <div style="padding: 8px 12px; margin-bottom: 6px; border-radius: 6px; cursor: pointer; 
+                    background: ${i === 0 ? '#e8f4fd' : '#fff'}; border: 1px solid ${i === 0 ? '#2c7be5' : '#dee2e6'}; 
+                    transition: all 0.2s;"
+             onclick="selectProtein(${i})" id="protein-item-${i}">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="radio" name="protein-select" ${checked} onclick="event.stopPropagation(); selectProtein(${i})">
+                <div>
+                    <div style="font-weight: 600; font-size: 0.9rem; color: #333;">${displayName}</div>
+                    <div style="font-size: 0.8rem; color: #6c757d;">长度: ${p.length} 个氨基酸</div>
+                </div>
+            </div>
+        </div>`;
+    });
+    
+    container.innerHTML = html;
+    selector.style.display = 'block';
+    updateProteinInfo();
+}
+
+function selectProtein(index) {
+    selectedProteinIndex = index;
+    allProteins.forEach((_, i) => {
+        const item = document.getElementById(`protein-item-${i}`);
+        const radio = item.querySelector('input[type="radio"]');
+        if (i === index) {
+            item.style.background = '#e8f4fd';
+            item.style.borderColor = '#2c7be5';
+            radio.checked = true;
+        } else {
+            item.style.background = '#fff';
+            item.style.borderColor = '#dee2e6';
+            radio.checked = false;
+        }
+    });
+    updateProteinInfo();
+}
+
+function updateProteinInfo() {
+    const info = document.getElementById('selected-protein-info');
+    if (selectedProteinIndex >= 0 && selectedProteinIndex < allProteins.length) {
+        const p = allProteins[selectedProteinIndex];
+        const displayName = p.id.length > 50 ? p.id.substring(0, 50) + '...' : p.id;
+        info.textContent = `已选择: ${displayName} (${p.length} aa)`;
+    } else {
+        info.textContent = '未选择蛋白质';
+    }
+}
+
+function getSelectedProtein() {
+    if (selectedProteinIndex >= 0 && selectedProteinIndex < allProteins.length) {
+        return allProteins[selectedProteinIndex];
+    }
+    return null;
+}
+
+function showSmilesSelector(smilesList) {
+    allSmiles = smilesList;
+    selectedSmilesIndex = -1;
+    smilesCurrentPage = 0;
+    document.getElementById('smiles-selector').style.display = 'block';
+    document.getElementById('selected-smiles-info').textContent = `共 ${allSmiles.length} 个小分子，请点击选择`;
+    renderSmilesOptions();
+}
+
+function renderSmilesOptions() {
+    const container = document.getElementById('smiles-options');
+    const totalPages = Math.ceil(allSmiles.length / SMILES_PAGE_SIZE);
+    const startIdx = smilesCurrentPage * SMILES_PAGE_SIZE;
+    const endIdx = Math.min(startIdx + SMILES_PAGE_SIZE, allSmiles.length);
+
+    let html = `<div style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 0.85rem; color: #6c757d;">
+            第 ${smilesCurrentPage + 1} 页 / 共 ${totalPages} 页（${allSmiles.length} 个分子）
+        </span>
+        <div style="display: flex; gap: 5px;">
+            <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;" 
+                    onclick="smilesPrevPage()" ${smilesCurrentPage === 0 ? 'disabled' : ''}>◀ 上一页</button>
+            <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;" 
+                    onclick="smilesNextPage()" ${smilesCurrentPage >= totalPages - 1 ? 'disabled' : ''}>下一页 ▶</button>
+        </div>
+    </div>`;
+
+    for (let i = startIdx; i < endIdx; i++) {
+        const smiles = allSmiles[i];
+        const short = smiles.length > 80 ? smiles.substring(0, 80) + '...' : smiles;
+        const isSelected = selectedSmilesIndex === i;
+        const bg = isSelected ? '#d4edff' : '#fff';
+        const border = isSelected ? '#2c7be5' : '#dee2e6';
+        const borderW = isSelected ? '2px' : '1px';
+        const checkIcon = isSelected ? '✅' : '⬜';
+        html += `
+        <div style="padding: 10px 12px; margin-bottom: 6px; border-radius: 8px; background: ${bg}; border: ${borderW} solid ${border};
+                    font-family: monospace; font-size: 0.85rem; word-break: break-all; cursor: pointer; transition: all 0.15s;
+                    display: flex; align-items: flex-start; gap: 10px;"
+             onclick="selectSmiles(${i})" title="${smiles}">
+            <span style="font-size: 1.1rem; flex-shrink: 0; line-height: 1;">${checkIcon}</span>
+            <div>
+                <span style="color: #2c7be5; font-weight: 700;">#${i + 1}</span>
+                <span style="margin-left: 6px;">${short}</span>
+            </div>
+        </div>`;
+    }
+
+    container.innerHTML = html;
+}
+
+function selectSmiles(index) {
+    selectedSmilesIndex = index;
+    const smiles = allSmiles[index];
+    document.getElementById('preprocess-smiles').value = smiles;
+    document.getElementById('screen-smiles').value = smiles;
+    document.getElementById('selected-smiles-info').innerHTML = 
+        `✅ 已选中第 <strong>${index + 1}</strong> 个分子（共 ${allSmiles.length} 个）`;
+    renderSmilesOptions();
+}
+
+function smilesPrevPage() {
+    if (smilesCurrentPage > 0) {
+        smilesCurrentPage--;
+        renderSmilesOptions();
+    }
+}
+
+function smilesNextPage() {
+    const totalPages = Math.ceil(allSmiles.length / SMILES_PAGE_SIZE);
+    if (smilesCurrentPage < totalPages - 1) {
+        smilesCurrentPage++;
+        renderSmilesOptions();
+    }
+}
+
+function getSelectedSmiles() {
+    const textareaLines = document.getElementById('preprocess-smiles').value
+        .split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    return textareaLines;
+}
+
+async function loadPdbFiles() {
+    const statusEl = document.getElementById('pdb-load-status');
+    try {
+        const url = `${API}/pdb-files`;
+        console.log('[PDB] Fetching:', url);
+        if (statusEl) statusEl.textContent = '正在加载蛋白列表...';
+        const resp = await fetch(url);
+        console.log('[PDB] Response status:', resp.status);
+        if (!resp.ok) { throw new Error(`HTTP ${resp.status}`); }
+        const data = await resp.json();
+        console.log('[PDB] Result:', data.success, 'files:', (data.files || []).length);
+        const select = document.getElementById('screen-target-select');
+        if (!select) { console.error('[PDB] screen-target-select not found'); return; }
+        while (select.options.length > 1) select.remove(1);
+        if (data.success && data.files) {
+            const groups = {local: [], external: [], alphafold: []};
+            data.files.forEach(f => {
+                const src = f.source || 'local';
+                if (groups[src]) groups[src].push(f);
+            });
+            const labels = {local: '本地PDB', external: '外部PDB', alphafold: 'AlphaFold预测'};
+            for (const [src, fileList] of Object.entries(groups)) {
+                if (fileList.length === 0) continue;
+                const group = document.createElement('optgroup');
+                group.label = `${labels[src] || src} (${fileList.length})`;
+                fileList.forEach(f => {
+                    const opt = document.createElement('option');
+                    opt.value = f.path;
+                    opt.textContent = `${f.name} (${f.size_kb} KB)`;
+                    group.appendChild(opt);
+                });
+                select.appendChild(group);
+            }
+            const total = data.files.length;
+            console.log('[PDB] Done, options:', select.options.length);
+            if (statusEl) statusEl.textContent = `已加载 ${total} 个蛋白文件`;
+        }
+    } catch (e) {
+        console.warn('[PDB] Failed to load PDB files:', e);
+        if (statusEl) statusEl.textContent = '加载失败: ' + e.message;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadPdbFiles();
+    loadPdbFilesFor3D();
+    const sel = document.getElementById('screen-target-select');
+    sel.addEventListener('change', function() {
+        document.getElementById('vina-box-settings').style.display = this.value ? 'block' : 'none';
+    });
+    var s = document.createElement('script');
+    s.src = 'https://3Dmol.org/build/3Dmol-min.js';
+    s.onload = function() { console.log('[3Dmol] loaded OK'); };
+    s.onerror = function() { console.warn('[3Dmol] CDN load failed'); };
+    document.head.appendChild(s);
+});
+
+// ── 3D 可视化 ──────────────────────────────────────────
+let v3dViewer = null;
+let v3dProteinModel = -1;
+let v3dLigandModels = [];
+let v3dSpinEnabled = false;
+let v3dCurrentTargetPath = '';
+
+function v3dInit() {
+    if (v3dViewer) return;
+    const el = document.getElementById('v3d-viewer');
+    if (!el) { console.error('[3Dmol] viewer div not found'); return; }
+    if (typeof $3Dmol === 'undefined') {
+        document.getElementById('v3d-info').textContent = '3Dmol.js 未加载，请检查网络连接后刷新页面';
+        return;
+    }
+    v3dViewer = $3Dmol.createViewer(el, {
+        backgroundColor: 'white',
+        antialias: true,
+    });
+}
+
+async function loadPdbFilesFor3D() {
+    try {
+        const resp = await fetch(`${API}/pdb-files`);
+        const data = await resp.json();
+        const select = document.getElementById('viewer3d-target');
+        if (!select || !data.success || !data.files) return;
+        while (select.options.length > 1) select.remove(1);
+        const groups = {local: [], external: [], alphafold: []};
+        data.files.forEach(f => {
+            const src = f.source || 'local';
+            if (groups[src]) groups[src].push(f);
+        });
+        const labels = {local: '本地PDB', external: '外部PDB', alphafold: 'AlphaFold预测'};
+        for (const [src, fileList] of Object.entries(groups)) {
+            if (fileList.length === 0) continue;
+            const group = document.createElement('optgroup');
+            group.label = `${labels[src] || src} (${fileList.length})`;
+            fileList.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f.path;
+                opt.textContent = `${f.name} (${f.size_kb} KB)`;
+                group.appendChild(opt);
+            });
+            select.appendChild(group);
+        }
+        console.log(`[3D] Loaded ${data.files.length} protein files`);
+    } catch (e) {
+        console.warn('Failed to load PDB files for 3D viewer:', e);
+    }
+}
+
+async function v3dLoadProtein() {
+    const path = document.getElementById('viewer3d-target').value;
+    if (!path) { alert('请先选择靶标蛋白'); return; }
+    v3dInit();
+    if (!v3dViewer) { alert('3Dmol.js 未加载，请刷新页面'); return; }
+    document.getElementById('v3d-info').textContent = '正在加载蛋白结构...';
+    try {
+        const resp = await fetch(`${API}/pdb-content`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({pdb_path: path})
+        });
+        const data = await resp.json();
+        if (!data.success) { alert(data.error); return; }
+        if (v3dProteinModel >= 0) {
+            v3dViewer.removeModel(v3dProteinModel);
+            v3dProteinModel = -1;
+        }
+        v3dLigandModels.forEach(m => { try { v3dViewer.removeModel(m); } catch(e){} });
+        v3dLigandModels = [];
+        const model = v3dViewer.addModel(data.pdb_content, 'pdb');
+        v3dProteinModel = model;
+        v3dCurrentTargetPath = path;
+        const style = v3dGetProteinStyle();
+        v3dViewer.setStyle({model: v3dProteinModel}, style);
+        v3dViewer.zoomTo();
+        v3dViewer.render();
+        v3dViewer.zoom(0.9);
+        const atomCount = data.pdb_content.split('\n').filter(l => l.startsWith('ATOM') || l.startsWith('HETATM')).length;
+        document.getElementById('v3d-info').textContent = `已加载: ${path.split(/[\\/]/).pop()} | 原子数: ${atomCount} | 使用鼠标旋转/缩放/平移`;
+    } catch (e) {
+        document.getElementById('v3d-info').textContent = '加载失败: ' + e.message;
+    }
+}
+
+async function v3dPredictSites() {
+    const path = document.getElementById('viewer3d-target').value || v3dCurrentTargetPath;
+    if (!path) { alert('请先选择靶标蛋白'); return; }
+    v3dInit();
+    if (!v3dViewer) return;
+    document.getElementById('v3d-info').textContent = '正在加载蛋白结构...';
+    try {
+        if (v3dProteinModel === -1 || v3dCurrentTargetPath !== path) {
+            const loadResp = await fetch(`${API}/pdb-content`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({pdb_path: path})
+            });
+            const loadData = await loadResp.json();
+            if (!loadData.success) {
+                document.getElementById('v3d-info').textContent = '加载蛋白失败: ' + (loadData.error || '');
+                return;
+            }
+            if (v3dProteinModel !== -1) {
+                try { v3dViewer.removeModel(v3dProteinModel); } catch(e){}
+            }
+            v3dLigandModels.forEach(m => { try { v3dViewer.removeModel(m); } catch(e){} });
+            v3dLigandModels = [];
+            v3dProteinModel = v3dViewer.addModel(loadData.pdb_content, 'pdb');
+            v3dCurrentTargetPath = path;
+            v3dViewer.setStyle({model: v3dProteinModel}, v3dGetProteinStyle());
+            v3dViewer.zoomTo();
+            v3dViewer.render();
+        }
+        document.getElementById('v3d-info').textContent = '正在预测结合位点...';
+        const resp = await fetch(`${API}/binding-sites`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({pdb_path: path})
+        });
+        const data = await resp.json();
+        if (!data.success) { document.getElementById('v3d-info').textContent = '预测失败: ' + (data.error || '未知错误'); return; }
+        const sites = data.binding_residues || [];
+        if (sites.length === 0) { document.getElementById('v3d-info').textContent = '未找到结合位点'; return; }
+        const resiList = sites.map(s => s.residue_num).filter(n => n > 0);
+        if (v3dProteinModel !== -1) {
+            v3dViewer.setStyle({model: v3dProteinModel}, v3dGetProteinStyle());
+            v3dViewer.setStyle({model: v3dProteinModel, resi: resiList}, {
+                cartoon: {color: 'red', opacity: 0.85},
+                stick: {color: 'red', radius: 0.15},
+            });
+        }
+        v3dViewer.removeAllShapes();
+        v3dViewer.removeAllLabels();
+        for (let i = 0; i < Math.min(sites.length, 10); i++) {
+            const s = sites[i];
+            const coords = s.coordinates || s.ca_coords;
+            if (coords && coords.length >= 3) {
+                v3dViewer.addSphere({
+                    center: {x: coords[0], y: coords[1], z: coords[2]},
+                    radius: 2.0,
+                    color: 'orange',
+                    opacity: 0.35,
+                });
+                v3dViewer.addLabel(
+                    `${s.residue_name || ''}${s.residue_num || ''} p=${(s.probability || 0).toFixed(2)}`,
+                    {
+                        position: {x: coords[0], y: coords[1], z: coords[2]},
+                        backgroundColor: 'orange',
+                        fontColor: 'white',
+                        fontSize: 11,
+                        showBackground: true,
+                        backgroundOpacity: 0.8,
+                    }
+                );
+            }
+        }
+        v3dViewer.render();
+        document.getElementById('v3d-info').textContent = `预测到 ${sites.length} 个结合位点残基（橙色高亮显示）`;
+    } catch (e) {
+        document.getElementById('v3d-info').textContent = '预测失败: ' + e.message;
+    }
+}
+
+async function v3dDockLigand() {
+    const path = document.getElementById('viewer3d-target').value || v3dCurrentTargetPath;
+    const smiles = document.getElementById('viewer3d-smiles').value.trim();
+    if (!path) { alert('请先选择靶标蛋白'); return; }
+    if (!smiles) { alert('请输入配体 SMILES'); return; }
+    v3dInit();
+    if (!v3dViewer) return;
+    document.getElementById('v3d-info').textContent = '正在加载蛋白结构...';
+    try {
+        if (v3dProteinModel === -1 || v3dCurrentTargetPath !== path) {
+            const loadResp = await fetch(`${API}/pdb-content`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({pdb_path: path})
+            });
+            const loadData = await loadResp.json();
+            if (!loadData.success) {
+                document.getElementById('v3d-info').textContent = '加载蛋白失败: ' + (loadData.error || '');
+                return;
+            }
+            if (v3dProteinModel !== -1) {
+                try { v3dViewer.removeModel(v3dProteinModel); } catch(e){}
+            }
+            v3dLigandModels.forEach(m => { try { v3dViewer.removeModel(m); } catch(e){} });
+            v3dLigandModels = [];
+            v3dProteinModel = v3dViewer.addModel(loadData.pdb_content, 'pdb');
+            v3dCurrentTargetPath = path;
+            v3dViewer.setStyle({model: v3dProteinModel}, v3dGetProteinStyle());
+            v3dViewer.zoomTo();
+            v3dViewer.render();
+        }
+        document.getElementById('v3d-info').textContent = '正在执行 Vina 对接，请稍候...';
+        const resp = await fetch(`${API}/dock-3d`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({pdb_path: path, smiles: smiles})
+        });
+        const data = await resp.json();
+        if (!data.success) { document.getElementById('v3d-info').textContent = '对接失败: ' + (data.error || '未知错误'); return; }
+        if (data.ligand_pdbqt) {
+            v3dLigandModels.forEach(m => { try { v3dViewer.removeModel(m); } catch(e){} });
+            v3dLigandModels = [];
+            const ligModel = v3dViewer.addModel(data.ligand_pdbqt, 'pdbqt');
+            v3dLigandModels.push(ligModel);
+            v3dViewer.setStyle({model: ligModel}, {
+                stick: {colorscheme: 'greenCarbon', radius: 0.18},
+                sphere: {colorscheme: 'greenCarbon', scale: 0.25},
+            });
+            v3dViewer.zoomTo({model: ligModel});
+            v3dViewer.render();
+            v3dViewer.zoom(0.85);
+        }
+        let info = `对接完成 | 分数: ${(data.best_score || 0).toFixed(2)} kcal/mol`;
+        if (data.n_poses) info += ` | 姿态数: ${data.n_poses}`;
+        if (data.box_size) info += ` | 盒子: ${data.box_size.map(v => v.toFixed(1)).join('×')}`;
+        document.getElementById('v3d-info').textContent = info;
+    } catch (e) {
+        document.getElementById('v3d-info').textContent = '对接失败: ' + e.message;
+    }
+}
+
+function v3dClearLigand() {
+    if (!v3dViewer) return;
+    v3dLigandModels.forEach(m => { try { v3dViewer.removeModel(m); } catch(e){} });
+    v3dLigandModels = [];
+    v3dViewer.render();
+    document.getElementById('v3d-info').textContent = '配体已清除';
+}
+
+function v3dToggleSpin() {
+    v3dSpinEnabled = !v3dSpinEnabled;
+    if (v3dViewer) v3dViewer.spin(v3dSpinEnabled ? 'y' : false);
+    const btn = document.getElementById('v3d-spin-btn');
+    btn.classList.toggle('active', v3dSpinEnabled);
+    btn.textContent = v3dSpinEnabled ? '停止旋转' : '旋转';
+}
+
+function v3dResetView() {
+    if (!v3dViewer) return;
+    v3dViewer.zoomTo();
+    v3dViewer.render();
+    v3dViewer.zoom(0.9);
+}
+
+function v3dGetProteinStyle() {
+    const styleType = (document.getElementById('v3d-style') || {}).value || 'cartoon';
+    const colorType = (document.getElementById('v3d-color') || {}).value || 'spectrum';
+    const styleObj = {};
+    let cScheme = colorType;
+    if (colorType === 'white') cScheme = 'whiteCarbon';
+    if (styleType === 'cartoon') {
+        styleObj.cartoon = {color: colorType, opacity: 0.9};
+        return styleObj;
+    }
+    const stickSphereOpts = {colorscheme: cScheme};
+    switch (styleType) {
+        case 'stick': styleObj.stick = {...stickSphereOpts, radius: 0.12}; break;
+        case 'sphere': styleObj.sphere = {...stickSphereOpts, scale: 0.3}; break;
+        case 'line': styleObj.line = {colorscheme: cScheme}; break;
+        case 'cross': styleObj.cross = {...stickSphereOpts, linewidth: 1.5, radius: 0.15}; break;
+    }
+    return styleObj;
+}
+
+function v3dChangeStyle() {
+    if (!v3dViewer || v3dProteinModel < 0) return;
+    v3dViewer.setStyle({model: v3dProteinModel}, v3dGetProteinStyle());
+    v3dViewer.render();
+}
+</script>
+{% endblock %}

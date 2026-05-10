@@ -1,0 +1,1187 @@
+{% extends "base.html" %}
+
+{% block title %}轨迹分析{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="header">
+        <h1>📊 轨迹分析与可视化</h1>
+        <p>PCA、t-SNE降维和智能抽帧分析</p>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('upload')">上传文件</button>
+        <button class="tab-btn" onclick="showTab('pca')">PCA分析</button>
+        <button class="tab-btn" onclick="showTab('tsne')">t-SNE分析</button>
+        <button class="tab-btn" onclick="showTab('keyframes')">智能抽帧</button>
+        <button class="tab-btn" onclick="showTab('clustering')">构象聚类</button>
+        <button class="tab-btn" onclick="showTab('rmsd-rmsf')">RMSD/RMSF</button>
+    </div>
+
+    <div id="upload-tab" class="tab-content active">
+        <div class="card">
+            <h3>上传轨迹文件</h3>
+            
+            <div class="form-group">
+                <label>拓扑文件</label>
+                <input type="file" id="topology-file" accept=".pdb,.psf,.prmtop,.gro" onchange="previewFile('topology')">
+                <div id="topology-preview" class="file-preview"></div>
+            </div>
+
+            <div class="form-group">
+                <label>轨迹文件</label>
+                <input type="file" id="trajectory-file" accept=".xtc,.trr,.dcd,.gro" onchange="previewFile('trajectory')">
+                <div id="trajectory-preview" class="file-preview"></div>
+            </div>
+
+            <button class="btn btn-primary" onclick="uploadTrajectory()">
+                📤 上传文件
+            </button>
+        </div>
+
+        <div class="card" id="file-info-card" style="display: none;">
+            <h3>文件信息</h3>
+            <div id="file-info-display"></div>
+            <button class="btn btn-primary" onclick="loadTrajectory()">
+                📂 加载轨迹
+            </button>
+        </div>
+    </div>
+
+    <div id="pca-tab" class="tab-content">
+        <div class="card">
+            <h3>PCA降维分析</h3>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>主成分数</label>
+                    <input type="number" id="pca-components" value="2" min="2" max="10">
+                </div>
+                <div class="form-group">
+                    <label>原子选择</label>
+                    <select id="pca-selection">
+                        <option value="protein">所有蛋白质原子</option>
+                        <option value="backbone">主链</option>
+                        <option value="name CA">Cα原子</option>
+                    </select>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="runPCA()">
+                📊 运行PCA分析
+            </button>
+        </div>
+
+        <div class="card" id="pca-results" style="display: none;">
+            <h3>PCA结果</h3>
+            <div id="pca-results-display"></div>
+            <canvas id="pca-plot"></canvas>
+        </div>
+    </div>
+
+    <div id="tsne-tab" class="tab-content">
+        <div class="card">
+            <h3>t-SNE非线性降维</h3>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>维度</label>
+                    <input type="number" id="tsne-components" value="2" min="2" max="3">
+                </div>
+                <div class="form-group">
+                    <label>困惑度</label>
+                    <input type="number" id="tsne-perplexity" value="30" min="5" max="50">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>迭代次数</label>
+                    <input type="number" id="tsne-iter" value="1000" min="500" max="3000">
+                </div>
+                <div class="form-group">
+                    <label>原子选择</label>
+                    <select id="tsne-selection">
+                        <option value="protein">所有蛋白质原子</option>
+                        <option value="backbone">主链</option>
+                        <option value="name CA">Cα原子</option>
+                    </select>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="runTSNE()">
+                🎨 运行t-SNE分析
+            </button>
+        </div>
+
+        <div class="card" id="tsne-results" style="display: none;">
+            <h3>t-SNE结果</h3>
+            <div id="tsne-results-display"></div>
+            <canvas id="tsne-plot"></canvas>
+        </div>
+    </div>
+
+    <div id="keyframes-tab" class="tab-content">
+        <div class="card">
+            <h3>智能抽帧</h3>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>抽帧数量</label>
+                    <input type="number" id="keyframes-num" value="100" min="10" max="500">
+                </div>
+                <div class="form-group">
+                    <label>抽帧方法</label>
+                    <select id="keyframes-method">
+                        <option value="rmsd">基于RMSD变化</option>
+                        <option value="clustering">基于聚类</option>
+                        <option value="uniform">均匀抽样</option>
+                    </select>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="extractKeyFrames()">
+                🎬 提取关键帧
+            </button>
+        </div>
+
+        <div class="card" id="keyframes-results" style="display: none;">
+            <h3>关键帧结果</h3>
+            <div id="keyframes-results-display"></div>
+            <canvas id="keyframes-plot"></canvas>
+            <button class="btn btn-secondary" onclick="downloadKeyFrames()">
+                📥 下载关键帧
+            </button>
+        </div>
+    </div>
+
+    <div id="clustering-tab" class="tab-content">
+        <div class="card">
+            <h3>构象聚类分析</h3>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>聚类数</label>
+                    <input type="number" id="cluster-num" value="5" min="2" max="20">
+                </div>
+                <div class="form-group">
+                    <label>聚类方法</label>
+                    <select id="cluster-method">
+                        <option value="kmeans">K-means</option>
+                        <option value="hierarchical">层次聚类</option>
+                    </select>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="runClustering()">
+                🔍 运行聚类分析
+            </button>
+        </div>
+
+        <div class="card" id="clustering-results" style="display: none;">
+            <h3>聚类结果</h3>
+            <div id="clustering-results-display"></div>
+            <canvas id="clustering-plot"></canvas>
+        </div>
+    </div>
+
+    <div id="rmsd-rmsf-tab" class="tab-content">
+        <div class="card">
+            <h3>RMSD和RMSF分析</h3>
+            
+            <button class="btn btn-primary" onclick="runRMSDRMSF()">
+                📈 分析RMSD和RMSF
+            </button>
+        </div>
+
+        <div class="card" id="rmsd-rmsf-results" style="display: none;">
+            <h3>RMSD/RMSF结果</h3>
+            <div id="rmsd-rmsf-results-display"></div>
+            <canvas id="rmsd-plot"></canvas>
+            <canvas id="rmsf-plot"></canvas>
+        </div>
+    </div>
+
+    <div id="loading-area" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <div class="loading-message" id="loading-message">处理中...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+let topologyFile = null;
+let trajectoryFile = null;
+
+function showTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    document.getElementById(tabName + '-tab').classList.add('active');
+    event.target.classList.add('active');
+}
+
+function previewFile(type) {
+    const fileInput = document.getElementById(type + '-file');
+    const preview = document.getElementById(type + '-preview');
+    
+    if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        const size = file.size < 1024 * 1024 
+            ? (file.size / 1024).toFixed(2) + ' KB'
+            : (file.size / 1024 / 1024).toFixed(2) + ' MB';
+        
+        preview.innerHTML = `
+            <div class="file-info">
+                <span class="file-icon">📄</span>
+                <div>
+                    <div class="file-name">${file.name}</div>
+                    <div class="file-size">${size}</div>
+                </div>
+            </div>
+        `;
+    }
+}
+
+function uploadTrajectory() {
+    const topologyInput = document.getElementById('topology-file');
+    const trajectoryInput = document.getElementById('trajectory-file');
+    
+    if (topologyInput.files.length === 0 || trajectoryInput.files.length === 0) {
+        alert('请选择拓扑文件和轨迹文件');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('topology', topologyInput.files[0]);
+    formData.append('trajectory', trajectoryInput.files[0]);
+    
+    showLoading('正在上传文件...');
+    
+    fetch('/api/trajectory/upload', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            topologyFile = data.topology_file;
+            trajectoryFile = data.trajectory_file;
+            
+            const infoDiv = document.getElementById('file-info-display');
+            infoDiv.innerHTML = `
+                <div class="file-info-detail">
+                    <div><strong>拓扑文件:</strong> ${data.topology_filename}</div>
+                    <div><strong>轨迹文件:</strong> ${data.trajectory_filename}</div>
+                    <div><strong>拓扑大小:</strong> ${data.topology_size_kb} KB</div>
+                    <div><strong>轨迹大小:</strong> ${data.trajectory_size_mb} MB</div>
+                </div>
+            `;
+            
+            document.getElementById('file-info-card').style.display = 'block';
+        } else {
+            alert('上传失败: ' + data.error);
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('错误: ' + error.message);
+    });
+}
+
+function loadTrajectory() {
+    if (!topologyFile || !trajectoryFile) {
+        alert('请先上传文件');
+        return;
+    }
+    
+    showLoading('正在加载轨迹...');
+    
+    fetch('/api/trajectory/load', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            topology_file: topologyFile,
+            trajectory_file: trajectoryFile
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            alert(`轨迹加载成功!\n帧数: ${data.n_frames}\n原子数: ${data.n_atoms}\n残基数: ${data.n_residues}`);
+        } else {
+            alert('加载失败: ' + data.error);
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('错误: ' + error.message);
+    });
+}
+
+function runPCA() {
+    if (!topologyFile || !trajectoryFile) {
+        alert('请先上传文件');
+        return;
+    }
+    
+    const params = {
+        topology_file: topologyFile,
+        trajectory_file: trajectoryFile,
+        n_components: parseInt(document.getElementById('pca-components').value),
+        atom_selection: document.getElementById('pca-selection').value
+    };
+    
+    showLoading('正在进行PCA分析...');
+    
+    fetch('/api/trajectory/pca', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(params)
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            displayPCAResults(data);
+        } else {
+            alert('PCA分析失败: ' + data.error);
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('错误: ' + error.message);
+    });
+}
+
+function runTSNE() {
+    if (!topologyFile || !trajectoryFile) {
+        alert('请先上传文件');
+        return;
+    }
+    
+    const params = {
+        topology_file: topologyFile,
+        trajectory_file: trajectoryFile,
+        n_components: parseInt(document.getElementById('tsne-components').value),
+        perplexity: parseFloat(document.getElementById('tsne-perplexity').value),
+        n_iter: parseInt(document.getElementById('tsne-iter').value),
+        atom_selection: document.getElementById('tsne-selection').value
+    };
+    
+    showLoading('正在进行t-SNE分析...');
+    
+    fetch('/api/trajectory/tsne', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(params)
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            displayTSNEResults(data);
+        } else {
+            alert('t-SNE分析失败: ' + data.error);
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('错误: ' + error.message);
+    });
+}
+
+function extractKeyFrames() {
+    if (!topologyFile || !trajectoryFile) {
+        alert('请先上传文件');
+        return;
+    }
+    
+    const params = {
+        topology_file: topologyFile,
+        trajectory_file: trajectoryFile,
+        num_frames: parseInt(document.getElementById('keyframes-num').value),
+        method: document.getElementById('keyframes-method').value
+    };
+    
+    showLoading('正在提取关键帧...');
+    
+    fetch('/api/trajectory/extract-key-frames', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(params)
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            displayKeyFramesResults(data);
+        } else {
+            alert('提取失败: ' + data.error);
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('错误: ' + error.message);
+    });
+}
+
+function runClustering() {
+    if (!topologyFile || !trajectoryFile) {
+        alert('请先上传文件');
+        return;
+    }
+    
+    const params = {
+        topology_file: topologyFile,
+        trajectory_file: trajectoryFile,
+        n_clusters: parseInt(document.getElementById('cluster-num').value),
+        method: document.getElementById('cluster-method').value
+    };
+    
+    showLoading('正在进行聚类分析...');
+    
+    fetch('/api/trajectory/cluster', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(params)
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            displayClusteringResults(data);
+        } else {
+            alert('聚类分析失败: ' + data.error);
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('错误: ' + error.message);
+    });
+}
+
+function runRMSDRMSF() {
+    if (!topologyFile || !trajectoryFile) {
+        alert('请先上传文件');
+        return;
+    }
+    
+    showLoading('正在分析RMSD和RMSF...');
+    
+    fetch('/api/trajectory/rmsd-rmsf', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            topology_file: topologyFile,
+            trajectory_file: trajectoryFile
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.success) {
+            displayRMSDRMSFResults(data);
+        } else {
+            alert('分析失败: ' + data.error);
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        alert('错误: ' + error.message);
+    });
+}
+
+function displayPCAResults(data) {
+    document.getElementById('pca-results').style.display = 'block';
+    const display = document.getElementById('pca-results-display');
+    
+    display.innerHTML = `
+        <div class="result-summary">
+            <h4>✅ PCA分析完成</h4>
+            <div><strong>总帧数:</strong> ${data.n_frames}</div>
+            <div><strong>PC1方差解释:</strong> ${(data.explained_variance[0] * 100).toFixed(2)}%</div>
+            <div><strong>PC2方差解释:</strong> ${(data.explained_variance[1] * 100).toFixed(2)}%</div>
+            <div><strong>总方差解释:</strong> ${(data.total_variance * 100).toFixed(2)}%</div>
+            <div><strong>主要运动:</strong> ${data.analysis_summary.dominant_motion}</div>
+        </div>
+    `;
+    
+    plot2D(data.transformed_coords, data.cluster_labels, 'pca-plot', 'PCA');
+}
+
+function displayTSNEResults(data) {
+    document.getElementById('tsne-results').style.display = 'block';
+    const display = document.getElementById('tsne-results-display');
+    
+    display.innerHTML = `
+        <div class="result-summary">
+            <h4>✅ t-SNE分析完成</h4>
+            <div><strong>总帧数:</strong> ${data.n_frames}</div>
+            <div><strong>困惑度:</strong> ${data.perplexity}</div>
+            <div><strong>迭代次数:</strong> ${data.analysis_summary.convergence}</div>
+            ${data.kl_divergence ? `<div><strong>KL散度:</strong> ${data.kl_divergence.toFixed(4)}</div>` : ''}
+            <div><strong>聚类数:</strong> ${data.analysis_summary.n_clusters}</div>
+        </div>
+    `;
+    
+    plot2D(data.transformed_coords, data.cluster_labels, 'tsne-plot', 't-SNE');
+}
+
+function displayKeyFramesResults(data) {
+    document.getElementById('keyframes-results').style.display = 'block';
+    const display = document.getElementById('keyframes-results-display');
+    
+    display.innerHTML = `
+        <div class="result-summary">
+            <h4>✅ 关键帧提取完成</h4>
+            <div><strong>总帧数:</strong> ${data.total_frames}</div>
+            <div><strong>提取帧数:</strong> ${data.extracted_frames}</div>
+            <div><strong>方法:</strong> ${data.method}</div>
+            ${data.statistics.mean_rmsd ? `<div><strong>平均RMSD:</strong> ${data.statistics.mean_rmsd.toFixed(3)} nm</div>` : ''}
+            ${data.statistics.avg_cluster_size ? `<div><strong>平均聚类大小:</strong> ${data.statistics.avg_cluster_size.toFixed(1)}</div>` : ''}
+        </div>
+        <div class="keyframes-list">
+            <h5>关键帧列表 (前10帧)</h5>
+            ${data.key_frames.slice(0, 10).map((frame, i) => `
+                <div class="keyframe-item">
+                    <span><strong>#${i+1}</strong> 帧${frame.frame_index} (${frame.time.toFixed(1)} ps)</span>
+                    ${frame.rmsd ? `<span>RMSD: ${frame.rmsd.toFixed(3)}</span>` : ''}
+                </div>
+            `).join('')}
+        </div>
+    `;
+    
+    plotKeyFramesTimeline(data.key_frames, 'keyframes-plot');
+}
+
+function displayClusteringResults(data) {
+    document.getElementById('clustering-results').style.display = 'block';
+    const display = document.getElementById('clustering-results-display');
+    
+    const clusters = data.clusters;
+    
+    display.innerHTML = `
+        <div class="result-summary">
+            <h4>✅ 聚类分析完成</h4>
+            <div><strong>方法:</strong> ${data.method}</div>
+            <div><strong>聚类数:</strong> ${data.n_clusters}</div>
+            <div><strong>平均聚类大小:</strong> ${data.analysis_summary.avg_cluster_size.toFixed(1)}</div>
+            ${data.inertia ? `<div><strong>惯性:</strong> ${data.inertia.toFixed(2)}</div>` : ''}
+        </div>
+        <div class="clusters-list">
+            <h5>聚类详情</h5>
+            ${clusters.map(cluster => `
+                <div class="cluster-item">
+                    <span><strong>聚类 ${cluster.cluster_id}:</strong> ${cluster.cluster_size} 帧</span>
+                    <span>代表帧: ${cluster.representative_frame}</span>
+                    ${cluster.avg_intra_distance !== undefined ? `<span>内距: ${cluster.avg_intra_distance.toFixed(3)}</span>` : ''}
+                </div>
+            `).join('')}
+        </div>
+    `;
+    
+    plotClusters(data.cluster_labels, 'clustering-plot', data.n_clusters);
+}
+
+function displayRMSDRMSFResults(data) {
+    document.getElementById('rmsd-rmsf-results').style.display = 'block';
+    const display = document.getElementById('rmsd-rmsf-results-display');
+    
+    display.innerHTML = `
+        <div class="result-summary">
+            <h4>✅ RMSD/RMSF分析完成</h4>
+            <div><strong>RMSD均值:</strong> ${data.rmsd.mean.toFixed(3)} nm</div>
+            <div><strong>RMSD标准差:</strong> ${data.rmsd.std.toFixed(3)} nm</div>
+            <div><strong>RMSF均值:</strong> ${data.rmsf.mean.toFixed(3)} nm</div>
+            <div><strong>RMSF标准差:</strong> ${data.rmsf.std.toFixed(3)} nm</div>
+            <div><strong>总帧数:</strong> ${data.n_frames}</div>
+            <div><strong>总残基数:</strong> ${data.n_residues}</div>
+        </div>
+        <div class="flexible-residues">
+            <h5>柔性最大残基 (前10个)</h5>
+            ${data.flexible_residues.map(res => `
+                <div class="residue-item">
+                    <span><strong>${res.residue_name}${res.residue_id}</strong></span>
+                    <span>RMSF: ${res.rmsf.toFixed(3)} nm</span>
+                </div>
+            `).join('')}
+        </div>
+    `;
+    
+    console.log('RMSD values:', data.rmsd.values);
+    console.log('RMSF values:', data.rmsf.values);
+    console.log('RMSD values length:', data.rmsd.values.length);
+    console.log('RMSF values length:', data.rmsf.values.length);
+    
+    if (data.rmsd.values && data.rmsd.values.length > 0) {
+        plotTimeSeries(data.rmsd.values, 'rmsd-plot', 'RMSD (nm)');
+    } else {
+        console.error('RMSD values is empty or undefined');
+    }
+    
+    if (data.rmsf.values && data.rmsf.values.length > 0) {
+        plotTimeSeries(data.rmsf.values, 'rmsf-plot', 'RMSF (nm)');
+    } else {
+        console.error('RMSF values is empty or undefined');
+    }
+}
+
+function downloadKeyFrames() {
+    if (!topologyFile || !trajectoryFile) {
+        alert('请先上传文件');
+        return;
+    }
+    
+    const params = {
+        topology_file: topologyFile,
+        trajectory_file: trajectoryFile,
+        num_frames: parseInt(document.getElementById('keyframes-num').value)
+    };
+    
+    showLoading('正在下载关键帧...');
+    
+    fetch('/api/trajectory/download-key-frames', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(params)
+    })
+    .then(response => {
+        hideLoading();
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.error || '下载失败');
+            });
+        }
+        return response.blob();
+    })
+    .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'keyframes.zip';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        alert('成功下载关键帧ZIP文件！');
+    })
+    .catch(error => {
+        hideLoading();
+        alert('下载失败: ' + error.message);
+    });
+}
+
+function showLoading(message) {
+    document.getElementById('loading-message').textContent = message;
+    document.getElementById('loading-area').style.display = 'flex';
+}
+
+function hideLoading() {
+    document.getElementById('loading-area').style.display = 'none';
+}
+
+function plot2D(coords, labels, canvasId, title) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+    
+    canvas.width = 600;
+    canvas.height = 500;
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'];
+    
+    const padding = 60;
+    const width = canvas.width - 2 * padding;
+    const height = canvas.height - 2 * padding;
+    
+    const xCoords = coords.map(p => p[0]);
+    const yCoords = coords.map(p => p[1]);
+    
+    const minX = Math.min(...xCoords);
+    const maxX = Math.max(...xCoords);
+    const minY = Math.min(...yCoords);
+    const maxY = Math.max(...yCoords);
+    
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#333';
+    ctx.fillText(title, canvas.width / 2 - 50, 30);
+    
+    ctx.strokeStyle = '#ddd';
+    ctx.beginPath();
+    ctx.moveTo(padding, padding);
+    ctx.lineTo(padding, canvas.height - padding);
+    ctx.lineTo(canvas.width - padding, canvas.height - padding);
+    ctx.stroke();
+    
+    coords.forEach((point, i) => {
+        const x = padding + ((point[0] - minX) / (maxX - minX)) * width;
+        const y = canvas.height - padding - ((point[1] - minY) / (maxY - minY)) * height;
+        
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, 2 * Math.PI);
+        ctx.fillStyle = colors[labels[i] % colors.length];
+        ctx.fill();
+    });
+}
+
+function plotKeyFramesTimeline(keyframes, canvasId) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = 700;
+    canvas.height = 340;
+
+    const padding = { top: 40, right: 20, bottom: 60, left: 60 };
+    const width = canvas.width - padding.left - padding.right;
+    const height = canvas.height - padding.top - padding.bottom;
+
+    const totalFrames = Math.max(...keyframes.map(kf => kf.frame_index));
+    const rmsdValues = keyframes.map(kf => kf.rmsd || 0);
+    const minRMSD = Math.min(...rmsdValues);
+    const maxRMSD = Math.max(...rmsdValues);
+    const rmsdRange = maxRMSD - minRMSD || 1;
+
+    // 计算每个点的画布坐标，供点击检测复用
+    const points = keyframes.map(kf => ({
+        kf,
+        x: padding.left + (kf.frame_index / totalFrames) * width,
+        y: padding.top + height - ((kf.rmsd - minRMSD) / rmsdRange) * height
+    }));
+
+    function draw(highlightIdx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 标题
+        ctx.font = 'bold 14px Arial';
+        ctx.fillStyle = '#333';
+        ctx.textAlign = 'center';
+        ctx.fillText('关键帧时间线', canvas.width / 2, 24);
+
+        // 坐标轴
+        ctx.strokeStyle = '#aaa';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, padding.top);
+        ctx.lineTo(padding.left, padding.top + height);
+        ctx.lineTo(padding.left + width, padding.top + height);
+        ctx.stroke();
+
+        // X轴：固定10个刻度（0, 总帧数/10, ..., 总帧数）
+        ctx.font = '10px Arial';
+        ctx.fillStyle = '#666';
+        ctx.textAlign = 'center';
+        for (let i = 0; i <= 10; i++) {
+            const frameVal = Math.round(totalFrames * i / 10);
+            const x = padding.left + (frameVal / totalFrames) * width;
+            ctx.fillText(frameVal, x, padding.top + height + 16);
+            ctx.strokeStyle = '#eee';
+            ctx.beginPath();
+            ctx.moveTo(x, padding.top);
+            ctx.lineTo(x, padding.top + height);
+            ctx.stroke();
+        }
+
+        // X轴标题
+        ctx.font = '11px Arial';
+        ctx.fillStyle = '#555';
+        ctx.textAlign = 'center';
+        ctx.fillText('帧序号', padding.left + width / 2, canvas.height - 8);
+
+        // Y轴刻度：5个
+        ctx.textAlign = 'right';
+        for (let i = 0; i <= 4; i++) {
+            const val = minRMSD + (rmsdRange * i / 4);
+            const y = padding.top + height - (i / 4) * height;
+            ctx.fillStyle = '#666';
+            ctx.font = '10px Arial';
+            ctx.fillText(val.toFixed(3), padding.left - 6, y + 4);
+            ctx.strokeStyle = '#eee';
+            ctx.beginPath();
+            ctx.moveTo(padding.left, y);
+            ctx.lineTo(padding.left + width, y);
+            ctx.stroke();
+        }
+
+        // Y轴标题
+        ctx.save();
+        ctx.translate(14, padding.top + height / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.font = '11px Arial';
+        ctx.fillStyle = '#555';
+        ctx.textAlign = 'center';
+        ctx.fillText('RMSD (nm)', 0, 0);
+        ctx.restore();
+
+        // 数据点
+        points.forEach(({ x, y }, i) => {
+            ctx.beginPath();
+            ctx.arc(x, y, i === highlightIdx ? 7 : 4, 0, 2 * Math.PI);
+            ctx.fillStyle = i === highlightIdx ? '#c0392b' : '#FF6B6B';
+            ctx.fill();
+        });
+
+        // tooltip
+        if (highlightIdx !== null && highlightIdx !== undefined) {
+            const { kf, x, y } = points[highlightIdx];
+            const label = `帧 #${kf.frame_index}  RMSD: ${kf.rmsd.toFixed(4)} nm  时间: ${kf.time.toFixed(1)} ps`;
+            ctx.font = '11px Arial';
+            const tw = ctx.measureText(label).width + 16;
+            const th = 24;
+            let tx = x + 10;
+            let ty = y - 30;
+            if (tx + tw > canvas.width) tx = x - tw - 10;
+            if (ty < 0) ty = y + 10;
+            ctx.fillStyle = 'rgba(30,30,30,0.85)';
+            ctx.beginPath();
+            ctx.roundRect(tx, ty, tw, th, 4);
+            ctx.fill();
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'left';
+            ctx.fillText(label, tx + 8, ty + 16);
+        }
+    }
+
+    draw(null);
+
+    // 点击检测
+    canvas.style.cursor = 'default';
+    canvas.onclick = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        let hit = null;
+        points.forEach(({ x, y }, i) => {
+            if (Math.hypot(mx - x, my - y) <= 8) hit = i;
+        });
+        draw(hit);
+    };
+
+    canvas.onmousemove = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        let hit = null;
+        points.forEach(({ x, y }, i) => {
+            if (Math.hypot(mx - x, my - y) <= 8) hit = i;
+        });
+        canvas.style.cursor = hit !== null ? 'pointer' : 'default';
+    };
+}
+
+function plotClusters(labels, canvasId, nClusters) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+    
+    canvas.width = 600;
+    canvas.height = 500;
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'];
+    
+    const padding = 60;
+    const width = canvas.width - 2 * padding;
+    const height = canvas.height - 2 * padding;
+    
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#333';
+    ctx.fillText('聚类分布', canvas.width / 2 - 50, 30);
+    
+    const clusterCounts = Array(nClusters).fill(0);
+    labels.forEach(label => {
+        clusterCounts[label]++;
+    });
+    
+    const barWidth = width / nClusters - 10;
+    const maxCount = Math.max(...clusterCounts);
+    
+    clusterCounts.forEach((count, i) => {
+        const barHeight = (count / maxCount) * height;
+        const x = padding + i * (barWidth + 10);
+        const y = canvas.height - padding - barHeight;
+        
+        ctx.fillStyle = colors[i % colors.length];
+        ctx.fillRect(x, y, barWidth, barHeight);
+        
+        ctx.fillStyle = '#333';
+        ctx.font = '12px Arial';
+        ctx.fillText(`聚类${i + 1}`, x + barWidth / 2 - 20, canvas.height - padding + 20);
+        ctx.fillText(`${count}帧`, x + barWidth / 2 - 15, y - 10);
+    });
+}
+
+function plotTimeSeries(values, canvasId, title) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+    
+    canvas.width = 600;
+    canvas.height = 300;
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    const padding = 60;
+    const width = canvas.width - 2 * padding;
+    const height = canvas.height - 2 * padding;
+    
+    const minVal = Math.min(...values);
+    const maxVal = Math.max(...values);
+    const valRange = maxVal - minVal || 1;  // 防止除以零
+    
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#333';
+    ctx.fillText(title, canvas.width / 2 - 50, 30);
+    
+    ctx.strokeStyle = '#ddd';
+    ctx.beginPath();
+    ctx.moveTo(padding, padding);
+    ctx.lineTo(padding, canvas.height - padding);
+    ctx.lineTo(canvas.width - padding, canvas.height - padding);
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.strokeStyle = '#FF6B6B';
+    ctx.lineWidth = 2;
+    
+    if (values.length === 1) {
+        const x = padding + width / 2;
+        const y = canvas.height - padding - height / 2;
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, 2 * Math.PI);
+        ctx.fill();
+    } else {
+        values.forEach((val, i) => {
+            const x = padding + (i / (values.length - 1)) * width;
+            const y = canvas.height - padding - ((val - minVal) / valRange) * height;
+            
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        });
+        ctx.stroke();
+    }
+    ctx.lineWidth = 1;
+}
+</script>
+
+<style>
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.tab-btn {
+    padding: 12px 24px;
+    background: #f0f0f0;
+    border: none;
+    cursor: pointer;
+    border-radius: 8px 8px 0 0;
+    margin-right: 8px;
+    font-size: 14px;
+}
+
+.tab-btn.active {
+    background: #1e3a5f;
+    color: white;
+}
+
+.card {
+    background: white;
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.form-row {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 16px;
+}
+
+.form-group {
+    flex: 1;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #333;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.file-preview {
+    margin-top: 12px;
+}
+
+.file-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 6px;
+}
+
+.file-icon {
+    font-size: 24px;
+}
+
+.file-name {
+    font-weight: 600;
+    color: #333;
+}
+
+.file-size {
+    font-size: 12px;
+    color: #666;
+}
+
+.file-info-detail div {
+    margin: 8px 0;
+    color: #333;
+}
+
+.result-summary {
+    padding: 16px;
+    background: #d4edda;
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+
+.result-summary h4 {
+    margin: 0 0 12px 0;
+    color: #155724;
+}
+
+.result-summary div {
+    margin: 4px 0;
+    color: #333;
+}
+
+.keyframes-list,
+.clusters-list,
+.flexible-residues {
+    margin-top: 16px;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 6px;
+}
+
+.keyframes-list h5,
+.clusters-list h5,
+.flexible-residues h5 {
+    margin: 0 0 12px 0;
+    color: #333;
+}
+
+.keyframe-item,
+.cluster-item,
+.residue-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px;
+    background: white;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.loading-content {
+    background: white;
+    padding: 32px;
+    border-radius: 12px;
+    text-align: center;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #1e3a5f;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 16px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-message {
+    color: #333;
+    font-size: 16px;
+}
+
+.btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-primary {
+    background: #1e3a5f;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #2c4a6f;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+}
+
+canvas {
+    margin-top: 16px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+</style>
+{% endblock %}

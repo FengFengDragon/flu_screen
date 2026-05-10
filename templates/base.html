@@ -1,0 +1,41 @@
+<!-- e:\pycharmcode\flu-screen\templates\base.html -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AI辅助生物医药分子机制探索平台{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1>AI辅助生物医药分子机制探索平台</h1>
+            <p>AI-Assisted Platform for Biomolecular Mechanism Exploration</p>
+        </div>
+    </div>
+
+    <nav class="nav">
+        <div class="container">
+            <ul>
+                <li><a href="/" {% if request.path == '/' %}class="active"{% endif %}>首页</a></li>
+                <li><a href="/md-simulation" {% if request.path.startswith('/md-simulation') %}class="active"{% endif %}>MD模拟</a></li>
+                <li><a href="/trajectory-analysis" {% if request.path.startswith('/trajectory-analysis') %}class="active"{% endif %}>轨迹分析</a></li>
+                <li><a href="/deep-learning" {% if request.path.startswith('/deep-learning') %}class="active"{% endif %}>深度学习</a></li>
+                <li><a href="/ml-binding" {% if request.path.startswith('/ml-binding') %}class="active"{% endif %}>机器学习</a></li>
+                <li><a href="/trajectory-visualization" {% if request.path.startswith('/trajectory-visualization') %}class="active"{% endif %}>轨迹可视化</a></li>
+                <li><a href="/virtual-screening" {% if request.path.startswith('/virtual-screening') %}class="active"{% endif %}>虚拟筛选</a></li>
+                <li><a href="/workflow" {% if request.path.startswith('/workflow') %}class="active"{% endif %}>工作流</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
