@@ -50,12 +50,16 @@
         <h3>批量分子预处理</h3>
         
         <div class="form-group" style="margin-bottom: 16px; padding: 16px; background: #f8f9fa; border-radius: 8px; border: 2px dashed #dee2e6;">
-            <label style="font-weight: 600; margin-bottom: 8px; display: block;">📁 上传文件（.txt, .smi, .csv）</label>
+            <label style="font-weight: 600; margin-bottom: 8px; display: block;">📁 上传文件（.txt, .smi, .csv, .sdf）</label>
             <p style="color: #6c757d; font-size: 0.85rem; margin-bottom: 12px;">
-                支持包含SMILES和FASTA格式的文件，自动解析蛋白质序列和小分子
+                支持多文件上传和文件夹上传，自动合并解析所有分子
             </p>
-            <input type="file" id="preprocess-file" accept=".txt,.smi,.csv" style="margin-bottom: 8px;">
-            <button class="btn btn-secondary" onclick="parseUploadFile()">📤 解析文件</button>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <input type="file" id="preprocess-file" accept=".txt,.smi,.csv,.sdf" multiple style="margin-bottom:0;">
+                <input type="file" id="preprocess-folder" accept=".txt,.smi,.csv,.sdf" webkitdirectory style="display:none;">
+                <button class="btn btn-secondary" onclick="document.getElementById('preprocess-folder').click()">📂 选择文件夹</button>
+                <button class="btn btn-secondary" onclick="parseUploadFile()">📤 解析文件</button>
+            </div>
             <span id="file-parse-result" style="margin-left: 12px; font-size: 0.85rem;"></span>
         </div>
 
@@ -121,10 +125,14 @@
         <div class="form-group" style="margin-bottom: 16px; padding: 16px; background: #f8f9fa; border-radius: 8px; border: 2px dashed #dee2e6;">
             <label style="font-weight: 600; margin-bottom: 8px; display: block;">📁 上传文件并直接筛选</label>
             <p style="color: #6c757d; font-size: 0.85rem; margin-bottom: 12px;">
-                上传包含SMILES的文件，自动进行预处理和分级对接
+                支持多文件和文件夹上传，自动合并解析后筛选
             </p>
-            <input type="file" id="screen-file" accept=".txt,.smi,.csv" style="margin-bottom: 8px;">
-            <button class="btn btn-primary" onclick="uploadAndScreen()">📤 上传并筛选</button>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <input type="file" id="screen-file" accept=".txt,.smi,.csv,.sdf" multiple style="margin-bottom:0;">
+                <input type="file" id="screen-folder" accept=".txt,.smi,.csv,.sdf" webkitdirectory style="display:none;">
+                <button class="btn btn-secondary" onclick="document.getElementById('screen-folder').click()">📂 选择文件夹</button>
+                <button class="btn btn-primary" onclick="uploadAndScreen()">📤 上传并筛选</button>
+            </div>
             <span id="screen-file-status" style="margin-left: 12px; font-size: 0.85rem;"></span>
         </div>
         
@@ -372,11 +380,20 @@ async function postFile(url, formData) {
 // ── 文件上传解析 ───────────────────────────────────────
 async function parseUploadFile() {
     const fileInput = document.getElementById('preprocess-file');
-    if (!fileInput.files.length) { alert('请选择文件'); return; }
+    const folderInput = document.getElementById('preprocess-folder');
     
-    const file = fileInput.files[0];
+    const allFiles = [];
+    const seen = new Set();
+    for (const f of fileInput.files) {
+        if (!seen.has(f.name + f.size)) { seen.add(f.name + f.size); allFiles.push(f); }
+    }
+    for (const f of folderInput.files) {
+        if (!seen.has(f.name + f.size)) { seen.add(f.name + f.size); allFiles.push(f); }
+    }
+    if (!allFiles.length) { alert('请选择文件或文件夹'); return; }
+    
     const formData = new FormData();
-    formData.append('file', file);
+    allFiles.forEach(f => formData.append('files', f));
     
     const resultSpan = document.getElementById('file-parse-result');
     resultSpan.textContent = '解析中...';
@@ -418,11 +435,20 @@ async function parseUploadFile() {
 // ── 文件上传并筛选 ─────────────────────────────────────
 async function uploadAndScreen() {
     const fileInput = document.getElementById('screen-file');
-    if (!fileInput.files.length) { alert('请选择文件'); return; }
+    const folderInput = document.getElementById('screen-folder');
     
-    const file = fileInput.files[0];
+    const allFiles = [];
+    const seen = new Set();
+    for (const f of fileInput.files) {
+        if (!seen.has(f.name + f.size)) { seen.add(f.name + f.size); allFiles.push(f); }
+    }
+    for (const f of folderInput.files) {
+        if (!seen.has(f.name + f.size)) { seen.add(f.name + f.size); allFiles.push(f); }
+    }
+    if (!allFiles.length) { alert('请选择文件或文件夹'); return; }
+    
     const formData = new FormData();
-    formData.append('file', file);
+    allFiles.forEach(f => formData.append('files', f));
     
     const statusSpan = document.getElementById('screen-file-status');
     const btn = event.target;

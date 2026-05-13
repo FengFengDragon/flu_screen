@@ -4,6 +4,7 @@ import re
 import json
 import time
 import logging
+import tempfile
 from rdkit import Chem
 from src.services.ligand_preprocessor import ligand_preprocessor
 from src.services.enhanced_docking import enhanced_docking
@@ -11,6 +12,28 @@ from src.services.enhanced_docking import enhanced_docking
 logger = logging.getLogger(__name__)
 
 bp = Blueprint('virtual_screening', __name__, url_prefix='/api/virtual-screening')
+
+
+def _parse_sdf_to_smiles(content_bytes: bytes) -> list:
+    """从 SDF 文件的二进制内容中提取所有分子的 SMILES"""
+    tmp = tempfile.NamedTemporaryFile(suffix='.sdf', delete=False)
+    try:
+        tmp.write(content_bytes)
+        tmp.flush()
+        tmp.close()
+        supplier = Chem.SDMolSupplier(tmp.name, removeHs=True)
+        smiles_list = []
+        for mol in supplier:
+            if mol is not None:
+                smi = Chem.MolToSmiles(mol)
+                if smi:
+                    smiles_list.append(smi)
+        return smiles_list
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
 
 
 @bp.route('/parse', methods=['POST'])
@@ -539,119 +562,155 @@ def vina_status():
 
 @bp.route('/upload-parse', methods=['POST'])
 def upload_and_parse():
-    """上传文件并解析SMILES/蛋白质序列"""
-    if 'file' not in request.files:
+    """上传文件并解析SMILES/蛋白质序列（支持多文件和文件夹）"""
+    uploaded_files = request.files.getlist('files')
+    if not uploaded_files:
+        uploaded_files = request.files.getlist('file')
+    if not uploaded_files:
+        single = request.files.get('file')
+        if single:
+            uploaded_files = [single]
+    if not uploaded_files:
         return jsonify({"success": False, "error": "未上传文件"}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"success": False, "error": "未选择文件"}), 400
-    
-    allowed_extensions = {'.txt', '.smi', '.csv'}
-    file_ext = os.path.splitext(file.filename or '')[1].lower()
-    
-    if file_ext not in allowed_extensions:
-        return jsonify({"success": False, "error": f"不支持的文件格式，仅支持: {', '.join(allowed_extensions)}"}), 400
-    
-    try:
-        content = file.read().decode('utf-8')
-        
-        proteins = []
-        smiles_list = []
-        errors = []
-        
-        lines = content.split('\n')
-        current_protein = None
-        current_seq = []
-        
-        for line_num, line in enumerate(lines, 1):
-            line = line.strip()
-            
-            if not line:
+
+    allowed_extensions = {'.txt', '.smi', '.csv', '.sdf'}
+
+    all_proteins = []
+    all_smiles = []
+    all_errors = []
+    seen_smiles = set()
+    total_files = 0
+
+    for file in uploaded_files:
+        if not file or file.filename == '':
+            continue
+        file_ext = os.path.splitext(file.filename or '')[1].lower()
+        if file_ext not in allowed_extensions:
+            continue
+        total_files += 1
+
+        try:
+            content_bytes = file.read()
+
+            if file_ext == '.sdf':
+                sdf_smiles = _parse_sdf_to_smiles(content_bytes)
+                for smi in sdf_smiles:
+                    if smi not in seen_smiles:
+                        seen_smiles.add(smi)
+                        all_smiles.append(smi)
                 continue
-            
-            if line.startswith('>'):
-                if current_protein and current_seq:
-                    proteins.append({
-                        'id': current_protein,
-                        'sequence': ''.join(current_seq),
-                        'length': len(''.join(current_seq))
-                    })
-                
-                current_protein = line[1:] if len(line) > 1 else f'protein_{len(proteins) + 1}'
-                current_seq = []
-                
-            elif _is_smiles(line):
-                mol = Chem.MolFromSmiles(line)
-                if mol:
-                    smiles_list.append(line)
-                else:
-                    errors.append({
-                        'line': line_num,
-                        'content': line,
-                        'error': '无效的SMILES格式'
-                    })
-            elif _is_protein_sequence(line):
-                current_seq.append(line)
-            elif re.match(r'^[A-Za-z]+$', line):
-                current_seq.append(line)
-            else:
-                errors.append({
-                    'line': line_num,
-                    'content': line,
-                    'error': '无法识别该行内容（非SMILES也非氨基酸序列）'
+
+            content = content_bytes.decode('utf-8')
+            lines = content.split('\n')
+            current_protein = None
+            current_seq = []
+
+            for line_num, line in enumerate(lines, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith('>'):
+                    if current_protein and current_seq:
+                        all_proteins.append({
+                            'id': current_protein,
+                            'sequence': ''.join(current_seq),
+                            'length': len(''.join(current_seq))
+                        })
+                    current_protein = line[1:] if len(line) > 1 else f'protein_{len(all_proteins) + 1}'
+                    current_seq = []
+                elif _is_smiles(line):
+                    mol = Chem.MolFromSmiles(line)
+                    if mol:
+                        smi = Chem.MolToSmiles(mol)
+                        if smi not in seen_smiles:
+                            seen_smiles.add(smi)
+                            all_smiles.append(smi)
+                    else:
+                        all_errors.append({'line': line_num, 'content': line, 'error': '无效的SMILES格式'})
+                elif _is_protein_sequence(line):
+                    current_seq.append(line)
+                elif re.match(r'^[A-Za-z]+$', line):
+                    current_seq.append(line)
+
+            if current_protein and current_seq:
+                all_proteins.append({
+                    'id': current_protein,
+                    'sequence': ''.join(current_seq),
+                    'length': len(''.join(current_seq))
                 })
-        
-        if current_protein and current_seq:
-            proteins.append({
-                'id': current_protein,
-                'sequence': ''.join(current_seq),
-                'length': len(''.join(current_seq))
-            })
-        
+        except Exception as e:
+            all_errors.append({'file': file.filename, 'error': str(e)})
+
+    if not all_smiles and not all_proteins:
         return jsonify({
-            "success": True,
-            "filename": file.filename,
-            "proteins": proteins,
-            "smiles_list": smiles_list,
-            "stats": {
-                "total_proteins": len(proteins),
-                "total_smiles": len(smiles_list),
-                "total_errors": len(errors)
-            },
-            "errors": errors
-        })
-        
-    except Exception as e:
-        return jsonify({"success": False, "error": f"文件解析失败: {str(e)}"}), 500
+            "success": False,
+            "error": f"在 {total_files} 个文件中未找到有效分子或蛋白质序列"
+        }), 400
+
+    return jsonify({
+        "success": True,
+        "filename": f"{total_files} 个文件" if total_files > 1 else (uploaded_files[0].filename or ''),
+        "proteins": all_proteins,
+        "smiles_list": all_smiles,
+        "stats": {
+            "total_proteins": len(all_proteins),
+            "total_smiles": len(all_smiles),
+            "total_errors": len(all_errors),
+            "total_files": total_files
+        },
+        "errors": all_errors
+    })
 
 
 @bp.route('/upload-screen', methods=['POST'])
 def upload_and_screen():
-    """上传文件并直接进行虚拟筛选"""
-    if 'file' not in request.files:
+    """上传文件并直接进行虚拟筛选（支持多文件和文件夹）"""
+    uploaded_files = request.files.getlist('files')
+    if not uploaded_files:
+        uploaded_files = request.files.getlist('file')
+    if not uploaded_files:
+        single = request.files.get('file')
+        if single:
+            uploaded_files = [single]
+    if not uploaded_files:
         return jsonify({"success": False, "error": "未上传文件"}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"success": False, "error": "未选择文件"}), 400
     
     tier1_count = request.form.get('tier1_count', 500, type=int)
     tier2_count = request.form.get('tier2_count', 100, type=int)
     tier3_count = request.form.get('tier3_count', 20, type=int)
     target_pdb = request.form.get('target_pdb', None)
     adaptive = request.form.get('adaptive', 'false').lower() in ('true', '1', 'yes')
+    allowed_extensions = {'.txt', '.smi', '.csv', '.sdf'}
     
     try:
-        content = file.read().decode('utf-8')
         smiles_list = []
-        
-        for line in content.split('\n'):
-            line = line.strip()
-            if line and not line.startswith('>') and _is_smiles(line) and not _is_protein_sequence(line):
-                mol = Chem.MolFromSmiles(line)
-                if mol:
-                    smiles_list.append(line)
+        seen_smiles = set()
+
+        for file in uploaded_files:
+            if not file or file.filename == '':
+                continue
+            file_ext = os.path.splitext(file.filename or '')[1].lower()
+            if file_ext not in allowed_extensions:
+                continue
+
+            content_bytes = file.read()
+
+            if file_ext == '.sdf':
+                for smi in _parse_sdf_to_smiles(content_bytes):
+                    if smi not in seen_smiles:
+                        seen_smiles.add(smi)
+                        smiles_list.append(smi)
+            else:
+                content = content_bytes.decode('utf-8')
+                for line in content.split('\n'):
+                    line = line.strip()
+                    if line and not line.startswith('>') and _is_smiles(line) and not _is_protein_sequence(line):
+                        mol = Chem.MolFromSmiles(line)
+                        if mol:
+                            smi = Chem.MolToSmiles(mol)
+                            if smi not in seen_smiles:
+                                seen_smiles.add(smi)
+                                smiles_list.append(smi)
         
         if not smiles_list:
             return jsonify({
