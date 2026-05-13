@@ -130,6 +130,7 @@ def screen():
     tier1_count = data.get('tier1_count', 500)
     tier2_count = data.get('tier2_count', 100)
     tier3_count = data.get('tier3_count', 20)
+    adaptive = data.get('adaptive', False)
 
     preprocess_result = ligand_preprocessor.full_preprocess(smiles_list, filters)
     if not preprocess_result['success']:
@@ -152,6 +153,7 @@ def screen():
         tier1_count=tier1_count,
         tier2_count=tier2_count,
         tier3_count=tier3_count,
+        adaptive=adaptive,
     )
 
     return jsonify({
@@ -178,6 +180,7 @@ def screen_stream():
     tier1_count = data.get('tier1_count', 500)
     tier2_count = data.get('tier2_count', 100)
     tier3_count = data.get('tier3_count', 20)
+    adaptive = data.get('adaptive', False)
 
     def generate():
         total_molecules = len(smiles_list)
@@ -225,6 +228,7 @@ def screen_stream():
             tier1_count=tier1_count,
             tier2_count=tier2_count,
             tier3_count=tier3_count,
+            adaptive=adaptive,
         )
 
         t1 = len(docking_result.get('tier1', {}).get('compounds', []))
@@ -636,6 +640,7 @@ def upload_and_screen():
     tier2_count = request.form.get('tier2_count', 100, type=int)
     tier3_count = request.form.get('tier3_count', 20, type=int)
     target_pdb = request.form.get('target_pdb', None)
+    adaptive = request.form.get('adaptive', 'false').lower() in ('true', '1', 'yes')
     
     try:
         content = file.read().decode('utf-8')
@@ -674,6 +679,7 @@ def upload_and_screen():
             tier1_count=tier1_count,
             tier2_count=tier2_count,
             tier3_count=tier3_count,
+            adaptive=adaptive,
         )
         
         return jsonify({

@@ -148,6 +148,15 @@
                 <label>Tier3 保留数量</label>
                 <input type="number" id="tier3-count" value="20" min="1">
             </div>
+            <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+                <input type="checkbox" id="adaptive-cutoff" style="width:18px;height:18px;cursor:pointer;">
+                <label for="adaptive-cutoff" style="cursor:pointer;margin:0;">
+                    自适应截断（KDE谷底检测）
+                </label>
+                <span style="font-size:11px;color:#888;margin-left:4px;" title="启用后，系统将基于得分分布的核密度估计自动确定每级通过数量，忽略上方固定阈值">
+                    ⓘ
+                </span>
+            </div>
         </div>
         <div class="form-group">
             <label>靶蛋白 PDB（可选，留空则使用RDKit评分）</label>
@@ -478,6 +487,7 @@ async function uploadAndScreen() {
             tier2_count: +document.getElementById('tier2-count').value,
             tier3_count: +document.getElementById('tier3-count').value,
             target_pdb: targetPdb,
+            adaptive: document.getElementById('adaptive-cutoff').checked,
         };
         if (targetPdb) {
             const cx = parseFloat(document.getElementById('box-cx').value);
@@ -631,6 +641,7 @@ async function runScreen() {
         tier3_count: +document.getElementById('tier3-count').value,
         target_pdb:  targetPdb,
         protein_id: selectedProtein ? selectedProtein.id : null,
+        adaptive: document.getElementById('adaptive-cutoff').checked,
     };
     if (targetPdb) {
         const cx = parseFloat(document.getElementById('box-cx').value);

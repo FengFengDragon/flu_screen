@@ -1,13 +1,201 @@
 import time
 import logging
 import numpy as np
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from rdkit import Chem
 from rdkit.Chem import Descriptors, Lipinski, Crippen
 from rdkit.Chem import rdMolDescriptors
 from rdkit.Chem.rdMolDescriptors import CalcTPSA
 
 logger = logging.getLogger(__name__)
+
+
+class AdaptiveCutoff:
+    """基于核密度估计的自适应截断策略
+
+    对每一级筛选的得分分布进行 KDE 拟合，通过检测密度函数的局部极小值
+    （分布谷底）来确定自然截断点。当分布无明显双峰结构时，退化为基于
+    统计量的百分位截断。
+    """
+
+    def __init__(self, min_pass_ratio: float = 0.05,
+                 max_pass_ratio: float = 0.50,
+                 fallback_percentile: float = 75.0):
+        self.min_pass_ratio = min_pass_ratio
+        self.max_pass_ratio = max_pass_ratio
+        self.fallback_percentile = fallback_percentile
+
+    def compute_cutoff(self, scores: np.ndarray,
+                       higher_is_better: bool = True) -> Tuple[float, Dict]:
+        """计算自适应截断阈值
+
+        Args:
+            scores: 得分数组
+            higher_is_better: True 表示得分越高越好（RDKit），
+                              False 表示得分越低越好（Vina）
+
+        Returns:
+            (cutoff_value, info_dict)
+        """
+        scores = np.asarray(scores, dtype=float)
+        n = len(scores)
+        info = {
+            'n_total': n,
+            'method': 'unknown',
+            'score_mean': float(np.mean(scores)),
+            'score_std': float(np.std(scores)),
+        }
+
+        if n < 5:
+            cutoff = scores[0] if n > 0 else 0.0
+            info['method'] = 'too_few_samples'
+            info['n_passed'] = n
+            info['cutoff_value'] = float(cutoff)
+            return cutoff, info
+
+        sorted_scores = np.sort(scores)
+        if not higher_is_better:
+            sorted_scores = sorted_scores[::-1]
+
+        n_pass_min = max(int(n * self.min_pass_ratio), 1)
+        n_pass_max = max(int(n * self.max_pass_ratio), n_pass_min + 1)
+
+        kde_cutoff = self._kde_valley_cutoff(sorted_scores, n_pass_min, n_pass_max)
+        if kde_cutoff is not None:
+            cutoff_value = kde_cutoff['cutoff']
+            n_passed = kde_cutoff['n_passed']
+            info['method'] = 'kde_valley'
+            info['kde_bandwidth'] = kde_cutoff['bandwidth']
+            info['kde_valley_position'] = float(kde_cutoff['cutoff'])
+        else:
+            fallback_idx = max(n_pass_min - 1,
+                               min(int(n * self.fallback_percentile / 100.0), n - 1))
+            if higher_is_better:
+                cutoff_value = sorted_scores[fallback_idx]
+            else:
+                cutoff_value = sorted_scores[fallback_idx]
+            n_passed = fallback_idx + 1
+            info['method'] = 'percentile_fallback'
+
+        info['cutoff_value'] = float(cutoff_value)
+        info['n_passed'] = int(n_passed)
+        info['pass_ratio'] = float(n_passed / n)
+        return cutoff_value, info
+
+    def _kde_valley_cutoff(self, sorted_scores: np.ndarray,
+                           n_pass_min: int,
+                           n_pass_max: int) -> Optional[Dict]:
+        """使用 KDE 检测得分分布中的谷底作为截断点
+
+        步骤:
+        1. 用 Silverman 法则计算带宽 h
+        2. 在得分范围内等距采样，计算 KDE 密度
+        3. 检测密度曲线的局部极小值
+        4. 选择最靠近"高分区域边缘"的谷底作为截断点
+        """
+        n = len(sorted_scores)
+        if n < 10:
+            return None
+
+        score_range = sorted_scores[-1] - sorted_scores[0]
+        if score_range < 1e-8:
+            return None
+
+        std = np.std(sorted_scores)
+        h = 1.06 * std * (n ** (-1.0 / 5.0))
+        if h < score_range * 0.01:
+            h = score_range * 0.05
+        if h > score_range * 0.5:
+            h = score_range * 0.2
+
+        n_eval = min(200, n * 2)
+        eval_points = np.linspace(sorted_scores[0], sorted_scores[-1], n_eval)
+
+        density = np.zeros(n_eval)
+        for i, x in enumerate(eval_points):
+            u = (x - sorted_scores) / h
+            density[i] = np.sum(np.exp(-0.5 * u ** 2)) / (n * h * np.sqrt(2 * np.pi))
+
+        local_minima = []
+        for i in range(1, n_eval - 1):
+            if density[i] < density[i - 1] and density[i] < density[i + 1]:
+                local_minima.append(i)
+
+        if not local_minima:
+            return None
+
+        peak_idx = int(np.argmax(density[:n_eval // 2 + n_eval // 4]))
+
+        best_valley = None
+        for valley_idx in local_minima:
+            n_above = int(np.searchsorted(sorted_scores, eval_points[valley_idx]))
+            if n_pass_min <= (n - n_above) <= n_pass_max:
+                if best_valley is None:
+                    best_valley = valley_idx
+                    break
+
+        if best_valley is None:
+            for valley_idx in local_minima:
+                n_above = int(np.searchsorted(sorted_scores, eval_points[valley_idx]))
+                n_passed = n - n_above
+                if n_passed >= n_pass_min:
+                    best_valley = valley_idx
+                    break
+
+        if best_valley is None:
+            return None
+
+        cutoff_score = eval_points[best_valley]
+        n_passed = int(np.sum(sorted_scores >= cutoff_score))
+
+        n_passed = max(n_pass_min, min(n_passed, n_pass_max))
+
+        return {
+            'cutoff': float(cutoff_score),
+            'n_passed': n_passed,
+            'bandwidth': float(h),
+            'valley_density': float(density[best_valley]),
+        }
+
+    def apply_cutoff(self, compounds: list, score_key: str = 'docking_score',
+                     higher_is_better: bool = True) -> Tuple[list, Dict]:
+        """对化合物列表应用自适应截断
+
+        Args:
+            compounds: 化合物结果列表，每个元素包含 score_key 对应的得分
+            score_key: 得分字段名
+            higher_is_better: True 表示得分越高越好
+
+        Returns:
+            (passed_compounds, cutoff_info)
+        """
+        if len(compounds) <= 3:
+            return compounds, {
+                'n_total': len(compounds),
+                'n_passed': len(compounds),
+                'method': 'too_few_samples',
+                'cutoff_value': None,
+            }
+
+        scores = np.array([c.get(score_key, 0) for c in compounds])
+        cutoff_value, info = self.compute_cutoff(scores, higher_is_better)
+
+        if higher_is_better:
+            passed = [c for c in compounds if c.get(score_key, 0) >= cutoff_value]
+        else:
+            passed = [c for c in compounds if c.get(score_key, 0) <= cutoff_value]
+
+        n_target = info['n_passed']
+        if len(passed) != n_target and len(compounds) > n_target:
+            sorted_compounds = sorted(compounds,
+                                      key=lambda c: c.get(score_key, 0),
+                                      reverse=higher_is_better)
+            passed = sorted_compounds[:n_target]
+
+        return passed, info
+
+
+adaptive_cutoff = AdaptiveCutoff()
 
 class EnhancedDocking:
     """增强型分子对接服务 - 支持分级对接和结合自由能计算"""
@@ -21,12 +209,18 @@ class EnhancedDocking:
                        center: Optional[list] = None,
                        box_size: Optional[list] = None,
                        tier1_count: int = 500, tier2_count: int = 100,
-                       tier3_count: int = 20) -> dict:
+                       tier3_count: int = 20,
+                       adaptive: bool = False) -> dict:
         """分级对接策略
 
         Tier1: RDKit 描述符快速打分（始终使用）
         Tier2: 当提供 target_pdb 时用 Vina 标准精度对接，否则用 RDKit
         Tier3: 当提供 target_pdb 时用 Vina 精细对接（高 exhaustiveness），否则用 RDKit
+
+        Args:
+            adaptive: 是否启用自适应截断模式。启用后，每一级的通过数量
+                      不再使用固定阈值，而是基于得分分布的 KDE 谷底检测
+                      自动确定。
         """
         
         start_time = time.time()
@@ -50,29 +244,66 @@ class EnhancedDocking:
             "summary": {},
             "use_vina": use_vina,
             "target_pdb": target_pdb,
+            "adaptive": adaptive,
         }
+
+        adaptive_info = {}
         
         tier1_results = self._high_throughput_screen(smiles_list, tier1_count)
         results["tier1"]["compounds"] = tier1_results
+
+        if adaptive and len(tier1_results) > 5:
+            tier1_cutoff, tier1_info = adaptive_cutoff.compute_cutoff(
+                np.array([c.get("docking_score", 0) for c in tier1_results]),
+                higher_is_better=True
+            )
+            adaptive_info["tier1"] = tier1_info
+            tier1_passed = [c for c in tier1_results if c.get("docking_score", 0) >= tier1_cutoff]
+            n_t1 = max(tier1_info['n_passed'], 5)
+            if len(tier1_passed) < n_t1:
+                tier1_passed = sorted(tier1_results, key=lambda c: c.get("docking_score", 0), reverse=True)[:n_t1]
+            tier2_input = tier1_passed
+        else:
+            tier2_input = tier1_results[:tier2_count]
         
         if use_vina:
             tier2_results = self._vina_docking(
-                tier1_results[:tier2_count], target_pdb,
+                tier2_input, target_pdb,
                 binding_site_coords, center, box_size,
                 exhaustiveness=8
             )
         else:
-            tier2_results = self._standard_docking(tier1_results[:tier2_count])
+            tier2_results = self._standard_docking(tier2_input)
         results["tier2"]["compounds"] = tier2_results
+
+        if adaptive and len(tier2_results) > 5:
+            score_key = "docking_score"
+            tier2_cutoff, tier2_info = adaptive_cutoff.compute_cutoff(
+                np.array([c.get(score_key, 0) for c in tier2_results]),
+                higher_is_better=not use_vina
+            )
+            adaptive_info["tier2"] = tier2_info
+            if use_vina:
+                tier2_passed = [c for c in tier2_results if c.get(score_key, 0) <= tier2_cutoff]
+            else:
+                tier2_passed = [c for c in tier2_results if c.get(score_key, 0) >= tier2_cutoff]
+            n_t2 = max(tier2_info['n_passed'], 3)
+            if len(tier2_passed) < n_t2:
+                tier2_passed = sorted(tier2_results,
+                                      key=lambda c: c.get(score_key, 0),
+                                      reverse=(not use_vina))[:n_t2]
+            tier3_input = tier2_passed
+        else:
+            tier3_input = tier2_results[:tier3_count]
         
         if use_vina:
             tier3_results = self._vina_docking(
-                tier2_results[:tier3_count], target_pdb,
+                tier3_input, target_pdb,
                 binding_site_coords, center, box_size,
                 exhaustiveness=32
             )
         else:
-            tier3_results = self._refined_docking(tier2_results[:tier3_count])
+            tier3_results = self._refined_docking(tier3_input)
         results["tier3"]["compounds"] = tier3_results
         
         best_score = None
@@ -87,8 +318,12 @@ class EnhancedDocking:
             "best_score": best_score,
             "docking_method": "AutoDock Vina" if use_vina else "RDKit描述符",
             "recommendation": "建议对Tier3候选化合物进行实验验证",
-            "processing_time": round(time.time() - start_time, 2)
+            "processing_time": round(time.time() - start_time, 2),
+            "cutoff_mode": "adaptive_kde" if adaptive else "fixed_threshold",
         }
+
+        if adaptive and adaptive_info:
+            results["summary"]["adaptive_cutoff_details"] = adaptive_info
         
         self.docking_results = tier3_results
         return results
